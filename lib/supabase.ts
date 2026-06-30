@@ -1,6 +1,6 @@
 import { createClient, SupabaseClient } from "@supabase/supabase-js"
 
-export const STORAGE_BUCKET = "productos"
+export const STORAGE_BUCKET = "media"
 
 // ── Cliente compartido (singleton global) ───────────────────────
 let _shared: SupabaseClient | null = null
@@ -69,7 +69,7 @@ export async function testConnection(
 ): Promise<{ success: boolean; message: string }> {
   try {
     const client = url && anonKey ? createClient(url, anonKey) : getSharedClient()
-    const { error } = await client.storage.listBuckets()
+    const { error } = await client.from("config").select("key").limit(1)
     if (error) {
       return { success: false, message: error.message }
     }

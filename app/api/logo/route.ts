@@ -25,10 +25,10 @@ export async function GET(request: Request) {
       .single()
 
     if (pubData?.value) {
-      // Redirigir a la URL de Cloudinary con transformación de tamaño
+      // Redirigir a la URL de Storage con transformación de tamaño (imgproxy)
       const s = size === "512" ? 512 : 192
-      const transformed = pubData.value.includes("cloudinary")
-        ? pubData.value.replace("/upload/", `/upload/c_pad,w_${s},h_${s},b_rgb:1a1210/`)
+      const transformed = pubData.value.includes("/storage/v1/object/public/")
+        ? `${pubData.value.replace("/storage/v1/object/public/", "/storage/v1/render/image/public/")}?width=${s}&height=${s}&resize=contain`
         : pubData.value
       return NextResponse.redirect(transformed, { status: 302 })
     }

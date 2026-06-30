@@ -1,0 +1,15 @@
+node_modules
+.next
+.git
+.env
+.env.local
+deploy
+images-backup
+backup-pos-osaka.sql
+*.log
+npm-debug.log*
+README.md
+.vscode
+.windsurf
+.agents
+Captura*.png

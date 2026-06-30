@@ -1,21 +1,44 @@
 /**
- * Cloudinary — subida de imágenes desde el frontend.
- * Usa unsigned upload preset para no exponer el API secret.
+ * Almacenamiento de imágenes/archivos en Supabase Storage (self-host).
+ * Mantiene la misma API pública que la versión anterior (Cloudinary)
+ * para no romper los componentes que la consumen.
  */
 
-const CLOUD_NAME = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME || ""
-const UPLOAD_PRESET = process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET || ""
+import { getSharedClient, STORAGE_BUCKET } from "@/lib/supabase"
 
-const UPLOAD_URL = `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`
-const RAW_UPLOAD_URL = `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/raw/upload`
+// Marcador de rutas públicas y de transformación de Supabase Storage.
+const PUBLIC_OBJECT_SEG = "/storage/v1/object/public/"
+const RENDER_IMAGE_SEG = "/storage/v1/render/image/public/"
 
-export interface CloudinaryUploadResult {
-  secure_url: string
-  public_id: string
-  width: number
-  height: number
-  format: string
-  bytes: number
+function extFromMime(mime: string): string {
+  if (mime.includes("webp")) return "webp"
+  if (mime.includes("png")) return "png"
+  if (mime.includes("jpeg") || mime.includes("jpg")) return "jpg"
+  if (mime.includes("gif")) return "gif"
+  if (mime.includes("svg")) return "svg"
+  if (mime.includes("pdf")) return "pdf"
+  return "bin"
+}
+
+function randomName(ext: string): string {
+  const id =
+    typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2)}`
+  return `${id}.${ext}`
+}
+
+/** Sube un Blob al bucket y devuelve su URL pública. */
+async function uploadBlob(path: string, blob: Blob, contentType: string): Promise<string> {
+  const sb = getSharedClient()
+  const { error } = await sb.storage.from(STORAGE_BUCKET).upload(path, blob, {
+    cacheControl: "3600",
+    upsert: true,
+    contentType,
+  })
+  if (error) throw new Error(error.message || "Error al subir archivo")
+  const { data } = sb.storage.from(STORAGE_BUCKET).getPublicUrl(path)
+  return data.publicUrl
 }
 
 /**
@@ -59,31 +82,12 @@ async function compressImage(file: File, maxWidth = 800, quality = 0.75): Promis
  * @returns URL segura de la imagen subida
  */
 export async function uploadImage(file: File, folder: string = "menu"): Promise<string> {
-  if (!CLOUD_NAME || !UPLOAD_PRESET) {
-    throw new Error("Cloudinary no está configurado. Revisa las variables de entorno.")
-  }
-
   // Comprimir imagen antes de subir
   const maxW = folder === "comprobantes" ? 600 : 800
   const compressed = await compressImage(file, maxW, 0.75)
-
-  const formData = new FormData()
-  formData.append("file", compressed)
-  formData.append("upload_preset", UPLOAD_PRESET)
-  formData.append("folder", `pos-osaka/${folder}`)
-
-  const res = await fetch(UPLOAD_URL, {
-    method: "POST",
-    body: formData,
-  })
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}))
-    throw new Error(err?.error?.message || `Error al subir imagen (${res.status})`)
-  }
-
-  const data: CloudinaryUploadResult = await res.json()
-  return data.secure_url
+  const contentType = compressed.type || "image/webp"
+  const path = `pos-osaka/${folder}/${randomName(extFromMime(contentType))}`
+  return uploadBlob(path, compressed, contentType)
 }
 
 /**
@@ -91,27 +95,11 @@ export async function uploadImage(file: File, folder: string = "menu"): Promise<
  * Útil para logos que ya están en base64.
  */
 export async function uploadBase64Image(dataUrl: string, folder: string = "logos"): Promise<string> {
-  if (!CLOUD_NAME || !UPLOAD_PRESET) {
-    throw new Error("Cloudinary no está configurado. Revisa las variables de entorno.")
-  }
-
-  const formData = new FormData()
-  formData.append("file", dataUrl)
-  formData.append("upload_preset", UPLOAD_PRESET)
-  formData.append("folder", `pos-osaka/${folder}`)
-
-  const res = await fetch(UPLOAD_URL, {
-    method: "POST",
-    body: formData,
-  })
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}))
-    throw new Error(err?.error?.message || `Error al subir imagen (${res.status})`)
-  }
-
-  const data: CloudinaryUploadResult = await res.json()
-  return data.secure_url
+  const res = await fetch(dataUrl)
+  const blob = await res.blob()
+  const contentType = blob.type || "image/png"
+  const path = `pos-osaka/${folder}/${randomName(extFromMime(contentType))}`
+  return uploadBlob(path, blob, contentType)
 }
 
 /**
@@ -119,28 +107,8 @@ export async function uploadBase64Image(dataUrl: string, folder: string = "logos
  * Retorna la URL pública del archivo.
  */
 export async function uploadPdfToCloudinary(blob: Blob, fileName: string): Promise<string> {
-  if (!CLOUD_NAME || !UPLOAD_PRESET) {
-    throw new Error("Cloudinary no está configurado.")
-  }
-
-  const formData = new FormData()
-  formData.append("file", blob, fileName)
-  formData.append("upload_preset", UPLOAD_PRESET)
-  formData.append("folder", "pos-osaka/recibos")
-  formData.append("resource_type", "raw")
-
-  const res = await fetch(RAW_UPLOAD_URL, {
-    method: "POST",
-    body: formData,
-  })
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}))
-    throw new Error(err?.error?.message || `Error al subir PDF (${res.status})`)
-  }
-
-  const data = await res.json()
-  return data.secure_url
+  const path = `pos-osaka/recibos/${Date.now()}-${fileName}`
+  return uploadBlob(path, blob, "application/pdf")
 }
 
 /**
@@ -151,16 +119,18 @@ export async function uploadPdfToCloudinary(blob: Blob, fileName: string): Promi
  * @param quality - Calidad (default "auto")
  */
 export function optimizeCloudinaryUrl(url: string, width: number = 400, quality: string = "auto"): string {
-  if (!url || !url.includes("cloudinary.com")) return url
-  // Insertar transformaciones después de /upload/
-  return url.replace("/upload/", `/upload/w_${width},q_${quality},f_auto/`)
+  if (!url || !url.includes(PUBLIC_OBJECT_SEG)) return url
+  // Convertir a endpoint de transformación de imágenes (imgproxy) con ancho/calidad.
+  const base = url.replace(PUBLIC_OBJECT_SEG, RENDER_IMAGE_SEG)
+  const q = quality === "auto" ? "" : `&quality=${quality}`
+  return `${base}?width=${width}${q}`
 }
 
 /**
  * Verifica si Cloudinary está configurado.
  */
 export function isCloudinaryConfigured(): boolean {
-  return Boolean(CLOUD_NAME && UPLOAD_PRESET)
+  return Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY)
 }
 
 /**
@@ -168,15 +138,15 @@ export function isCloudinaryConfigured(): boolean {
  * @param url - URL completa de la imagen en Cloudinary
  */
 export async function deleteCloudinaryImage(url: string): Promise<boolean> {
-  if (!url || !url.includes("cloudinary")) return false
+  if (!url || !url.includes(PUBLIC_OBJECT_SEG)) return false
   try {
-    const res = await fetch("/api/cloudinary-delete", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-internal-token": process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "" },
-      body: JSON.stringify({ url }),
-    })
-    const data = await res.json()
-    return data.ok === true
+    // Extraer el path dentro del bucket: .../object/public/<bucket>/<path>
+    const after = url.split(`${PUBLIC_OBJECT_SEG}${STORAGE_BUCKET}/`)[1]
+    if (!after) return false
+    const path = after.split("?")[0]
+    const sb = getSharedClient()
+    const { error } = await sb.storage.from(STORAGE_BUCKET).remove([path])
+    return !error
   } catch {
     return false
   }

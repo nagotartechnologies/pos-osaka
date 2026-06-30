@@ -7,55 +7,28 @@ import { parseSchedule, checkStoreOpen, DAY_LABELS } from "@/lib/schedule"
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ""
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ""
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || ""
-const CLOUD_NAME = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME || ""
-const UPLOAD_PRESET = process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET || ""
 const WEBHOOK_TOKEN = process.env.GREENAPI_WEBHOOK_TOKEN || ""
-
-// Subir imagen (buffer) a Cloudinary desde el servidor
-async function uploadImageToCloudinary(buffer: Buffer, fileName: string): Promise<string | null> {
-  if (!CLOUD_NAME || !UPLOAD_PRESET) return null
-  try {
-    const base64 = `data:image/jpeg;base64,${buffer.toString("base64")}`
-    const formData = new FormData()
-    formData.append("file", base64)
-    formData.append("upload_preset", UPLOAD_PRESET)
-    formData.append("folder", "pos-osaka/chat-media")
-    const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`, {
-      method: "POST",
-      body: formData,
-    })
-    if (!res.ok) return null
-    const data = await res.json()
-    return data.secure_url || null
-  } catch {
-    return null
-  }
-}
-
-// Subir audio (buffer) a Cloudinary desde el servidor
-async function uploadAudioToCloudinary(buffer: Buffer, fileName: string): Promise<string | null> {
-  if (!CLOUD_NAME || !UPLOAD_PRESET) return null
-  try {
-    const base64 = `data:video/ogg;base64,${buffer.toString("base64")}`
-    const formData = new FormData()
-    formData.append("file", base64)
-    formData.append("upload_preset", UPLOAD_PRESET)
-    formData.append("folder", "pos-osaka/chat-media")
-    formData.append("resource_type", "video")
-    const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUD_NAME}/video/upload`, {
-      method: "POST",
-      body: formData,
-    })
-    if (!res.ok) return null
-    const data = await res.json()
-    return data.secure_url || null
-  } catch {
-    return null
-  }
-}
+const STORAGE_BUCKET = "media"
 
 function getServerClient() {
   return createClient(supabaseUrl, supabaseKey)
+}
+
+// Sube un buffer al bucket de Supabase Storage y devuelve su URL publica.
+async function uploadMediaToStorage(buffer: Buffer, path: string, contentType: string): Promise<string | null> {
+  try {
+    const sb = getServerClient()
+    const { error } = await sb.storage.from(STORAGE_BUCKET).upload(path, buffer, {
+      contentType,
+      upsert: true,
+      cacheControl: "3600",
+    })
+    if (error) return null
+    const { data } = sb.storage.from(STORAGE_BUCKET).getPublicUrl(path)
+    return data.publicUrl || null
+  } catch {
+    return null
+  }
 }
 
 // ── Extraer número limpio del chatId (56912345678@c.us → 56912345678) ──
@@ -111,8 +84,8 @@ export async function POST(req: NextRequest) {
       if (downloadUrl) {
         const buffer = await downloadFile(downloadUrl)
         if (buffer) {
-          const cloudUrl = await uploadImageToCloudinary(buffer, `chat-${Date.now()}.jpg`)
-          if (cloudUrl) mediaUrl = cloudUrl
+          const storedUrl = await uploadMediaToStorage(buffer, `pos-osaka/chat-media/chat-${Date.now()}.jpg`, "image/jpeg")
+          if (storedUrl) mediaUrl = storedUrl
         }
       }
     } else if (typeMessage === "audioMessage") {
@@ -122,8 +95,8 @@ export async function POST(req: NextRequest) {
       if (downloadUrl) {
         const buffer = await downloadFile(downloadUrl)
         if (buffer) {
-          const cloudUrl = await uploadAudioToCloudinary(buffer, `audio-${Date.now()}.ogg`)
-          if (cloudUrl) mediaUrl = cloudUrl
+          const storedUrl = await uploadMediaToStorage(buffer, `pos-osaka/chat-media/audio-${Date.now()}.ogg`, "audio/ogg")
+          if (storedUrl) mediaUrl = storedUrl
         }
       }
     } else if (typeMessage === "documentMessage" || typeMessage === "videoMessage") {
