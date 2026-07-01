@@ -2,9 +2,14 @@ import { NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 
 /**
- * Sirve el logo del negocio como imagen real.
- * Convierte el data URL guardado en Supabase a una respuesta binaria.
- * Uso: <img src="/api/logo" /> o en el manifest como ícono PWA.
+ * Sirve el logo del negocio como imagen binaria directa (sin redirect).
+ * Los navegadores NO siguen 302 para favicons ni iconos PWA/manifest,
+ * por eso esta ruta actúa como proxy y devuelve los bytes de la imagen.
+ *
+ * Prioridad:
+ *  1. data URL base64 guardado en config.logo  (más rápido, sin red extra)
+ *  2. logoPublicUrl en Storage (proxy de bytes via fetch)
+ *  3. Fallback PNG estático en /icon-512.png
  */
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
@@ -13,52 +18,66 @@ export async function GET(request: Request) {
   try {
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL
     const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-    if (!url || !key) return fallbackIcon(request.url)
+    if (!url || !key) return fallbackIcon()
 
     const supabase = createClient(url, key)
 
-    // Intentar logoPublicUrl primero (Cloudinary)
-    const { data: pubData } = await supabase
+    // 1. Intentar data URL base64 del logo (logo o logoLight)
+    const { data: rows } = await supabase
       .from("config")
-      .select("value")
-      .eq("key", "logoPublicUrl")
-      .single()
+      .select("key, value")
+      .in("key", ["logo", "logoPublicUrl"])
 
-    if (pubData?.value) {
-      // Redirigir a la URL de Storage con transformación de tamaño (imgproxy)
-      const s = size === "512" ? 512 : 192
-      const transformed = pubData.value.includes("/storage/v1/object/public/")
-        ? `${pubData.value.replace("/storage/v1/object/public/", "/storage/v1/render/image/public/")}?width=${s}&height=${s}&resize=contain`
-        : pubData.value
-      return NextResponse.redirect(transformed, { status: 302 })
+    const cfg: Record<string, string> = {}
+    for (const r of rows || []) cfg[r.key] = r.value
+
+    const s = size === "512" ? 512 : 192
+
+    // 1. logoPublicUrl en Storage → imgproxy redimensiona al tamaño exacto pedido
+    //    Esto garantiza que el PNG devuelto sea exactamente SxS px (requerido por Chrome PWA)
+    if (cfg.logoPublicUrl) {
+      const storageUrl = cfg.logoPublicUrl.includes("/storage/v1/object/public/")
+        ? `${cfg.logoPublicUrl.replace("/storage/v1/object/public/", "/storage/v1/render/image/public/")}?width=${s}&height=${s}&resize=fill&background=0x00000000`
+        : cfg.logoPublicUrl
+      const imgRes = await fetch(storageUrl)
+      if (imgRes.ok) {
+        const buf = await imgRes.arrayBuffer()
+        const ct = imgRes.headers.get("content-type") ?? "image/png"
+        return new NextResponse(buf, {
+          headers: {
+            "Content-Type": ct,
+            "Cache-Control": "public, max-age=3600",
+          },
+        })
+      }
     }
 
-    // Fallback: convertir data URL a binario
-    const { data } = await supabase
-      .from("config")
-      .select("value")
-      .eq("key", "logo")
-      .single()
+    // 2. Fallback: data URL base64 (imagen original sin redimensionar)
+    if (cfg.logo && cfg.logo.startsWith("data:")) {
+      const [header, b64] = cfg.logo.split(",")
+      const mime = header.match(/data:(.*?);/)?.[1] ?? "image/png"
+      const buffer = Buffer.from(b64, "base64")
+      return new NextResponse(buffer, {
+        headers: {
+          "Content-Type": mime,
+          "Cache-Control": "public, max-age=3600",
+        },
+      })
+    }
 
-    if (!data?.value || !data.value.startsWith("data:")) return fallbackIcon(request.url)
-
-    const [header, base64] = data.value.split(",")
-    const mimeMatch = header.match(/data:(.*?);/)
-    const mime = mimeMatch ? mimeMatch[1] : "image/png"
-    const buffer = Buffer.from(base64, "base64")
-
-    return new NextResponse(buffer, {
-      headers: {
-        "Content-Type": mime,
-        "Cache-Control": "public, max-age=3600",
-      },
-    })
+    return fallbackIcon()
   } catch {
-    return fallbackIcon(request.url)
+    return fallbackIcon()
   }
 }
 
-function fallbackIcon(requestUrl?: string) {
-  const base = requestUrl ? new URL(requestUrl).origin : "https://osakasushivic.netlify.app"
-  return NextResponse.redirect(new URL("/icon-512.png", base), { status: 302 })
+function fallbackIcon() {
+  // SVG genérico inline — no requiere archivos estáticos ni red
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 192 192">
+    <rect width="192" height="192" rx="32" fill="#1a1210"/>
+    <text x="96" y="120" font-size="100" text-anchor="middle" fill="#c1272d" font-family="serif">🍣</text>
+  </svg>`
+  return new NextResponse(svg, {
+    headers: { "Content-Type": "image/svg+xml", "Cache-Control": "public, max-age=60" },
+  })
 }

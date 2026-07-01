@@ -1,4 +1,4 @@
-const CACHE_NAME = "osaka-pos-v2"
+const CACHE_NAME = "osaka-pos-v3"
 
 self.addEventListener("install", (event) => {
   self.skipWaiting()

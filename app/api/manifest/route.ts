@@ -29,13 +29,13 @@ export async function GET() {
         src: "/api/logo?s=192",
         sizes: "192x192",
         type: "image/png",
-        purpose: "any",
+        purpose: "any maskable",
       },
       {
         src: "/api/logo?s=512",
         sizes: "512x512",
         type: "image/png",
-        purpose: "any",
+        purpose: "any maskable",
       },
     ],
   }
