@@ -30,6 +30,7 @@ interface CartItem extends MenuItem {
   selectedWrapper?: CustomizationOption | null
   customBuild?: boolean
   customBuildNotes?: string
+  unitChoices?: CustomizationOption[]
 }
 
 export default function CartaPage() {
@@ -66,6 +67,7 @@ export default function CartaPage() {
   const [customWrapper, setCustomWrapper] = useState<CustomizationOption | null>(null)
   const [customInstructions, setCustomInstructions] = useState("")
   const [customTriedConfirm, setCustomTriedConfirm] = useState(false)
+  const [unitChoices, setUnitChoices] = useState<(CustomizationOption | null)[]>([])
 
   // Ármalo a tu pinta
   const [buildItem, setBuildItem] = useState<MenuItem | null>(null)
@@ -160,7 +162,7 @@ export default function CartaPage() {
 
       // Cargar productos y categorías
       const [prods, cats] = await Promise.all([getAvailableProducts(), getDbCategories()])
-      setMenuItems(prods.map((p) => ({ id: p.id, name: p.name, price: Number(p.price), image: p.image, category: p.category, description: p.description || "", protein_options: p.protein_options || null, wrapper_options: p.wrapper_options || null, allow_custom_build: p.allow_custom_build || false })))
+      setMenuItems(prods.map((p) => ({ id: p.id, name: p.name, price: Number(p.price), image: p.image, category: p.category, description: p.description || "", protein_options: p.protein_options || null, wrapper_options: p.wrapper_options || null, allow_custom_build: p.allow_custom_build || false, per_unit_choice: p.per_unit_choice || false, choice_count: p.choice_count || null })))
       if (cats.length > 0) {
         setCategories([{ id: "all", name: "Todo" }, ...cats.map((c) => ({ id: c.id, name: c.name }))])
       }
@@ -197,23 +199,47 @@ export default function CartaPage() {
     setCustomWrapper(null)
     setCustomInstructions("")
     setCustomTriedConfirm(false)
+    const count = item.per_unit_choice ? (item.choice_count || 1) : 0
+    setUnitChoices(count > 0 ? Array(count).fill(null) : [])
   }
 
   const hasCustomChange = (customProtein?.price || 0) > 0 || (customWrapper?.price || 0) > 0
 
+  const isPerUnit = customizeItem?.per_unit_choice && (customizeItem.choice_count || 0) > 0
+
+  const perUnitComplete = isPerUnit ? unitChoices.every((c) => c !== null) : true
+
   const confirmCustomization = () => {
     if (!customizeItem) return
+    if (isPerUnit && !perUnitComplete) {
+      setCustomTriedConfirm(true)
+      return
+    }
     if (hasCustomChange && !customInstructions.trim()) {
       setCustomTriedConfirm(true)
       return
     }
-    const key = makeCartKey(customizeItem, customProtein, customWrapper)
+    let key: string
+    let notes = customInstructions.trim() || ""
+    let extraFields: Record<string, unknown> = {}
+    if (isPerUnit) {
+      const choices = unitChoices.filter((c): c is CustomizationOption => c !== null)
+      const grouped = choices.reduce((acc, c) => {
+        acc[c.name] = (acc[c.name] || 0) + 1
+        return acc
+      }, {} as Record<string, number>)
+      const desc = Object.entries(grouped).map(([name, count]) => `${count}x ${name}`).join(", ")
+      key = `${customizeItem.id}--unit-${desc}`
+      extraFields = { unitChoices: choices }
+    } else {
+      key = makeCartKey(customizeItem, customProtein, customWrapper)
+      extraFields = { selectedProtein: customProtein, selectedWrapper: customWrapper }
+    }
     const catName = getCategoryName(customizeItem.category)
-    const notes = customInstructions.trim() || ""
     setCart((prev) => {
       const existing = prev.find((c) => (c.cartKey || c.id) === key)
       if (existing) return prev.map((c) => (c.cartKey || c.id) === key ? { ...c, quantity: c.quantity + 1, notes: notes || c.notes } : c)
-      return [...prev, { ...customizeItem, category: catName, quantity: 1, cartKey: key, selectedProtein: customProtein, selectedWrapper: customWrapper, notes }]
+      return [...prev, { ...customizeItem, category: catName, quantity: 1, cartKey: key, notes, ...extraFields }]
     })
     setCustomizeItem(null)
     setDetailItem(null)
@@ -370,8 +396,17 @@ export default function CartaPage() {
       newOrder = await addOrder({
         items: cart.map(c => {
           const extras: { description: string; price: number }[] = []
-          if (c.selectedProtein && c.selectedProtein.price > 0) extras.push({ description: `Proteína: ${c.selectedProtein.name}`, price: c.selectedProtein.price })
-          if (c.selectedWrapper && c.selectedWrapper.price > 0) extras.push({ description: `Envoltura: ${c.selectedWrapper.name}`, price: c.selectedWrapper.price })
+          if (c.unitChoices && c.unitChoices.length > 0) {
+            const grouped = c.unitChoices.reduce((acc: Record<string, number>, opt) => {
+              acc[opt.name] = (acc[opt.name] || 0) + 1
+              return acc
+            }, {} as Record<string, number>)
+            for (const [name, count] of Object.entries(grouped)) {
+              extras.push({ description: `${count}x ${name}`, price: 0 })
+            }
+          }
+          if (c.selectedProtein) extras.push({ description: `Proteína: ${c.selectedProtein.name}`, price: c.selectedProtein.price })
+          if (c.selectedWrapper) extras.push({ description: `Envoltura: ${c.selectedWrapper.name}`, price: c.selectedWrapper.price })
           return { id: c.id, name: c.name, price: c.price, quantity: c.quantity, category: c.category, notes: c.notes?.trim() || "", extras: extras.length > 0 ? extras : undefined, customBuild: c.customBuild || false, customBuildNotes: c.customBuildNotes || "" }
         }),
         total: cartTotal,
@@ -759,8 +794,63 @@ export default function CartaPage() {
 
             {/* Options */}
             <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
+              {/* Elección por unidad */}
+              {isPerUnit && (
+                <div className="space-y-4">
+                  <div className="rounded-xl px-3 py-2.5" style={{ background: "#f0f7ff", border: "1px solid #bfdbfe" }}>
+                    <p className="text-[11px] font-medium" style={{ color: "#1e40af" }}>
+                      Elige una opción para cada uno de tus {customizeItem.choice_count} handrolls
+                    </p>
+                  </div>
+                  {unitChoices.map((choice, idx) => {
+                    const options = [
+                      ...(customizeItem.protein_options || []),
+                      ...(customizeItem.wrapper_options || []),
+                    ]
+                    return (
+                      <div key={idx}>
+                        <p className="text-[11px] font-bold uppercase tracking-wide mb-2" style={{ color: "#8c7e6a" }}>
+                          Handroll {idx + 1}
+                        </p>
+                        <div className="space-y-1.5">
+                          {options.map((opt) => {
+                            const isSelected = choice?.name === opt.name
+                            return (
+                              <button
+                                key={opt.name}
+                                onClick={() => setUnitChoices(prev => prev.map((c, i) => i === idx ? opt : c))}
+                                className="w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl border-2 transition-all text-left"
+                                style={{
+                                  borderColor: isSelected ? "#c1272d" : "#f0ebe3",
+                                  background: isSelected ? "#fff5f5" : "#fff",
+                                }}
+                              >
+                                <div className="flex items-center gap-2.5">
+                                  <div className="w-4 h-4 rounded-full border-2 flex items-center justify-center" style={{ borderColor: isSelected ? "#c1272d" : "#d0c8bc" }}>
+                                    {isSelected && <div className="w-2 h-2 rounded-full" style={{ background: "#c1272d" }} />}
+                                  </div>
+                                  <span className="text-sm font-medium capitalize" style={{ color: "#1a1210" }}>{opt.name}</span>
+                                </div>
+                                <span className="text-xs font-semibold" style={{ color: opt.price > 0 ? "#c1272d" : "#2e7d32" }}>
+                                  {opt.price > 0 ? `+$${opt.price.toLocaleString("es-CL")}` : "Base"}
+                                </span>
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )
+                  })}
+                  {customTriedConfirm && !perUnitComplete && (
+                    <p className="text-[10px] font-semibold" style={{ color: "#c1272d" }}>
+                      Debes elegir una opción para cada handroll
+                    </p>
+                  )}
+                </div>
+              )}
+
               {/* Proteína */}
-              {customizeItem.protein_options && customizeItem.protein_options.length > 0 && (
+              {!isPerUnit && customizeItem.protein_options && customizeItem.protein_options.length > 0 && (
                 <div>
                   <p className="text-[11px] font-bold uppercase tracking-wide mb-2" style={{ color: "#8c7e6a" }}><span className="inline-flex items-center gap-1"><Beef className="h-3 w-3" /> Proteína</span> <span className="text-[9px] font-medium" style={{ color: "#b5a898" }}>(opcional)</span></p>
                   <div className="space-y-1.5">
@@ -793,7 +883,7 @@ export default function CartaPage() {
               )}
 
               {/* Envoltura */}
-              {customizeItem.wrapper_options && customizeItem.wrapper_options.length > 0 && (
+              {!isPerUnit && customizeItem.wrapper_options && customizeItem.wrapper_options.length > 0 && (
                 <div>
                   <p className="text-[11px] font-bold uppercase tracking-wide mb-2" style={{ color: "#8c7e6a" }}><span className="inline-flex items-center gap-1"><Sparkles className="h-3 w-3" /> Envoltura</span> <span className="text-[9px] font-medium" style={{ color: "#b5a898" }}>(opcional)</span></p>
                   <div className="space-y-1.5">

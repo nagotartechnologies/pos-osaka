@@ -40,6 +40,7 @@ export function usePOS() {
   const [customWrapper, setCustomWrapper] = useState<CustomizationOption | null>(null)
   const [customInstructions, setCustomInstructions] = useState("")
   const [customTriedConfirm, setCustomTriedConfirm] = useState(false)
+  const [unitChoices, setUnitChoices] = useState<(CustomizationOption | null)[]>([])
 
   // Build custom
   const [buildProduct, setBuildProduct] = useState<Product | null>(null)
@@ -108,6 +109,9 @@ export function usePOS() {
 
   const hasCustomChange = (customProtein?.price || 0) > 0 || (customWrapper?.price || 0) > 0
 
+  const isPerUnit = customizeProduct?.per_unit_choice && (customizeProduct.choice_count || 0) > 0
+  const perUnitComplete = isPerUnit ? unitChoices.every((c) => c !== null) : true
+
   // Cart actions
   const addToCart = useCallback(
     (product: Product) => {
@@ -117,6 +121,8 @@ export function usePOS() {
         setCustomWrapper(null)
         setCustomInstructions("")
         setCustomTriedConfirm(false)
+        const count = product.per_unit_choice ? (product.choice_count || 1) : 0
+        setUnitChoices(count > 0 ? Array(count).fill(null) : [])
         return
       }
       setCart((prev) => {
@@ -179,34 +185,40 @@ export function usePOS() {
   // Customization confirm
   const confirmCustomization = useCallback(() => {
     if (!customizeProduct) return
+    if (isPerUnit && !perUnitComplete) {
+      setCustomTriedConfirm(true)
+      return
+    }
     if (hasCustomChange && !customInstructions.trim()) {
       setCustomTriedConfirm(true)
       return
     }
-    const key = makeCartKey(customizeProduct, customProtein, customWrapper)
     const catName = getCategoryName(customizeProduct.category)
-    const notes = customInstructions.trim() || ""
-    setCart((prev) => {
-      const existing = prev.find((i) => (i.cartKey || i.id) === key)
-      if (existing) return prev.map((i) => (i.cartKey || i.id) === key ? { ...i, quantity: i.quantity + 1, notes: notes || i.notes } : i)
-      return [
-        ...prev,
-        {
-          id: customizeProduct.id,
-          name: customizeProduct.name,
-          price: customizeProduct.price,
-          image: customizeProduct.image,
-          category: catName,
-          quantity: 1,
-          cartKey: key,
-          selectedProtein: customProtein,
-          selectedWrapper: customWrapper,
-          notes,
-        },
-      ]
-    })
+    if (isPerUnit) {
+      const choices = unitChoices.filter((c): c is CustomizationOption => c !== null)
+      const grouped = choices.reduce((acc, c) => {
+        acc[c.name] = (acc[c.name] || 0) + 1
+        return acc
+      }, {} as Record<string, number>)
+      const desc = Object.entries(grouped).map(([name, count]) => `${count}x ${name}`).join(", ")
+      const key = `${customizeProduct.id}--unit-${desc}`
+      const notes = customInstructions.trim() || desc
+      setCart((prev) => {
+        const existing = prev.find((i) => (i.cartKey || i.id) === key)
+        if (existing) return prev.map((i) => (i.cartKey || i.id) === key ? { ...i, quantity: i.quantity + 1, notes: notes || i.notes } : i)
+        return [...prev, { id: customizeProduct.id, name: customizeProduct.name, price: customizeProduct.price, image: customizeProduct.image, category: catName, quantity: 1, cartKey: key, notes, unitChoices: choices }]
+      })
+    } else {
+      const key = makeCartKey(customizeProduct, customProtein, customWrapper)
+      const notes = customInstructions.trim() || ""
+      setCart((prev) => {
+        const existing = prev.find((i) => (i.cartKey || i.id) === key)
+        if (existing) return prev.map((i) => (i.cartKey || i.id) === key ? { ...i, quantity: i.quantity + 1, notes: notes || i.notes } : i)
+        return [...prev, { id: customizeProduct.id, name: customizeProduct.name, price: customizeProduct.price, image: customizeProduct.image, category: catName, quantity: 1, cartKey: key, selectedProtein: customProtein, selectedWrapper: customWrapper, notes }]
+      })
+    }
     setCustomizeProduct(null)
-  }, [customizeProduct, customProtein, customWrapper, customInstructions, hasCustomChange, getCategoryName])
+  }, [customizeProduct, customProtein, customWrapper, customInstructions, hasCustomChange, isPerUnit, perUnitComplete, unitChoices, getCategoryName])
 
   // Build custom
   const openBuildCustom = useCallback((product: Product) => {
@@ -252,8 +264,17 @@ export function usePOS() {
     const data: AddOrderData & { cardType?: string | null } = {
       items: cart.map((i) => {
         const extras: { description: string; price: number }[] = []
-        if (i.selectedProtein && i.selectedProtein.price > 0) extras.push({ description: `Proteína: ${i.selectedProtein.name}`, price: i.selectedProtein.price })
-        if (i.selectedWrapper && i.selectedWrapper.price > 0) extras.push({ description: `Envoltura: ${i.selectedWrapper.name}`, price: i.selectedWrapper.price })
+        if (i.unitChoices && i.unitChoices.length > 0) {
+          const grouped = i.unitChoices.reduce((acc: Record<string, number>, opt) => {
+            acc[opt.name] = (acc[opt.name] || 0) + 1
+            return acc
+          }, {} as Record<string, number>)
+          for (const [name, count] of Object.entries(grouped)) {
+            extras.push({ description: `${count}x ${name}`, price: 0 })
+          }
+        }
+        if (i.selectedProtein) extras.push({ description: `Proteína: ${i.selectedProtein.name}`, price: i.selectedProtein.price })
+        if (i.selectedWrapper) extras.push({ description: `Envoltura: ${i.selectedWrapper.name}`, price: i.selectedWrapper.price })
         return {
           id: i.id,
           name: i.name,
@@ -350,6 +371,10 @@ export function usePOS() {
     customTriedConfirm,
     hasCustomChange,
     confirmCustomization,
+    isPerUnit,
+    perUnitComplete,
+    unitChoices,
+    setUnitChoices,
     // Build custom
     buildProduct,
     setBuildProduct,

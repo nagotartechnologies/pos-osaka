@@ -40,6 +40,8 @@ interface MenuItemEditable extends MenuItem {
   available?: boolean
   protein_options?: CustomizationOption[] | null
   wrapper_options?: CustomizationOption[] | null
+  per_unit_choice?: boolean
+  choice_count?: number | null
 }
 
 interface CsvRow {
@@ -92,6 +94,8 @@ export default function MenuPage() {
     description: "",
     available: true,
     allow_custom_build: false,
+    per_unit_choice: false,
+    choice_count: "",
   })
 
   // Opciones de personalización
@@ -126,6 +130,8 @@ export default function MenuPage() {
         protein_options: p.protein_options || null,
         wrapper_options: p.wrapper_options || null,
         allow_custom_build: p.allow_custom_build || false,
+        per_unit_choice: p.per_unit_choice || false,
+        choice_count: p.choice_count || null,
       })))
 
       // Cargar categorías
@@ -217,6 +223,8 @@ export default function MenuPage() {
       description: "",
       available: true,
       allow_custom_build: false,
+      per_unit_choice: false,
+      choice_count: "",
     })
     setProteinOptions([])
     setWrapperOptions([])
@@ -233,6 +241,8 @@ export default function MenuPage() {
       description: item.description || "",
       available: item.available !== false,
       allow_custom_build: item.allow_custom_build || false,
+      per_unit_choice: item.per_unit_choice || false,
+      choice_count: item.choice_count ? item.choice_count.toString() : "",
     })
     setProteinOptions(item.protein_options || [])
     setWrapperOptions(item.wrapper_options || [])
@@ -271,6 +281,8 @@ export default function MenuPage() {
         description: formData.description,
         available: formData.available,
         allow_custom_build: formData.allow_custom_build,
+        per_unit_choice: formData.per_unit_choice,
+        choice_count: formData.per_unit_choice && formData.choice_count ? parseInt(formData.choice_count) : null,
         protein_options: cleanProteins.length > 0 ? cleanProteins : null,
         wrapper_options: cleanWrappers.length > 0 ? cleanWrappers : null,
       }
@@ -290,6 +302,8 @@ export default function MenuPage() {
         description: formData.description,
         available: formData.available,
         allow_custom_build: formData.allow_custom_build,
+        per_unit_choice: formData.per_unit_choice,
+        choice_count: formData.per_unit_choice && formData.choice_count ? parseInt(formData.choice_count) : null,
         sort_order: items.length,
         protein_options: cleanProteins.length > 0 ? cleanProteins : null,
         wrapper_options: cleanWrappers.length > 0 ? cleanWrappers : null,
@@ -1009,6 +1023,41 @@ export default function MenuPage() {
                     }`}
                   />
                 </button>
+              </div>
+
+              {/* Elección por unidad */}
+              <div className="rounded-xl border border-blue-500/20 p-4 space-y-3" style={{ background: formData.per_unit_choice ? "rgba(59,130,246,0.05)" : undefined }}>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-card-foreground flex items-center gap-1.5">🔢 Elección por unidad</p>
+                    <p className="text-xs text-muted-foreground">El cliente elige una opción por cada unidad (ej: 3 handrolls = 3 elecciones)</p>
+                  </div>
+                  <button
+                    onClick={() => setFormData((prev) => ({ ...prev, per_unit_choice: !prev.per_unit_choice }))}
+                    className={`relative h-6 w-11 rounded-full transition-colors ${
+                      formData.per_unit_choice ? "bg-blue-500" : "bg-border"
+                    }`}
+                  >
+                    <span
+                      className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${
+                        formData.per_unit_choice ? "translate-x-5" : "translate-x-0"
+                      }`}
+                    />
+                  </button>
+                </div>
+                {formData.per_unit_choice && (
+                  <div>
+                    <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Cantidad de unidades a elegir</label>
+                    <input
+                      type="number"
+                      min={1}
+                      value={formData.choice_count}
+                      onChange={(e) => setFormData((prev) => ({ ...prev, choice_count: e.target.value }))}
+                      placeholder="Ej: 3"
+                      className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                    />
+                  </div>
+                )}
               </div>
 
               {/* Marcar todos / Desmarcar todos */}

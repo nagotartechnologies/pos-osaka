@@ -15,6 +15,10 @@ interface CustomizeModalProps {
   hasCustomChange: boolean
   onConfirm: () => void
   onClose: () => void
+  isPerUnit?: boolean
+  perUnitComplete?: boolean
+  unitChoices?: (CustomizationOption | null)[]
+  setUnitChoices?: (v: (CustomizationOption | null)[]) => void
 }
 
 export function CustomizeModal({
@@ -29,6 +33,10 @@ export function CustomizeModal({
   hasCustomChange,
   onConfirm,
   onClose,
+  isPerUnit,
+  perUnitComplete,
+  unitChoices,
+  setUnitChoices,
 }: CustomizeModalProps) {
   const total = product.price + (protein?.price || 0) + (wrapper?.price || 0)
 
@@ -55,7 +63,59 @@ export function CustomizeModal({
 
         {/* Options */}
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
-          {product.protein_options && product.protein_options.length > 0 && (
+          {/* Elección por unidad */}
+          {isPerUnit && unitChoices && setUnitChoices && (
+            <div className="space-y-4">
+              <div className="rounded-xl px-3 py-2.5 bg-blue-50 border border-blue-200">
+                <p className="text-[11px] font-medium text-blue-800">
+                  Elige una opción para cada uno de tus {product.choice_count} handrolls
+                </p>
+              </div>
+              {unitChoices.map((choice, idx) => {
+                const options = [
+                  ...(product.protein_options || []),
+                  ...(product.wrapper_options || []),
+                ]
+                return (
+                  <div key={idx}>
+                    <p className="text-[11px] font-bold uppercase tracking-wide mb-2 text-muted-foreground">
+                      Handroll {idx + 1}
+                    </p>
+                    <div className="space-y-1.5">
+                      {options.map((opt) => {
+                        const isSelected = choice?.name === opt.name
+                        return (
+                          <button
+                            key={opt.name}
+                            onClick={() => setUnitChoices(unitChoices.map((c, i) => i === idx ? opt : c))}
+                            className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl border-2 transition-all text-left ${
+                              isSelected ? "border-primary bg-primary/5" : "border-border"
+                            }`}
+                          >
+                            <div className="flex items-center gap-2.5">
+                              <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${isSelected ? "border-primary" : "border-muted-foreground/30"}`}>
+                                {isSelected && <div className="w-2 h-2 rounded-full bg-primary" />}
+                              </div>
+                              <span className="text-sm font-medium capitalize text-card-foreground">{opt.name}</span>
+                            </div>
+                            <span className={`text-xs font-semibold ${opt.price > 0 ? "text-primary" : "text-emerald-500"}`}>
+                              {opt.price > 0 ? `+$${opt.price.toLocaleString("es-CL")}` : "Base"}
+                            </span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )
+              })}
+              {triedConfirm && !perUnitComplete && (
+                <p className="text-[10px] font-semibold text-red-500">Debes elegir una opción para cada handroll</p>
+              )}
+            </div>
+          )}
+
+          {/* Proteína */}
+          {!isPerUnit && product.protein_options && product.protein_options.length > 0 && (
             <div>
               <p className="text-[11px] font-bold uppercase tracking-wide mb-2 text-muted-foreground">
                 🥩 Proteína <span className="text-[9px] font-medium">(opcional)</span>
@@ -87,7 +147,7 @@ export function CustomizeModal({
             </div>
           )}
 
-          {product.wrapper_options && product.wrapper_options.length > 0 && (
+          {!isPerUnit && product.wrapper_options && product.wrapper_options.length > 0 && (
             <div>
               <p className="text-[11px] font-bold uppercase tracking-wide mb-2 text-muted-foreground">
                 🍣 Envoltura <span className="text-[9px] font-medium">(opcional)</span>

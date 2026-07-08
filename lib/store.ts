@@ -13,10 +13,19 @@ export interface MenuItem {
   protein_options?: CustomizationOption[] | null
   wrapper_options?: CustomizationOption[] | null
   allow_custom_build?: boolean
+  per_unit_choice?: boolean
+  choice_count?: number | null
 }
 
 export interface CartItem extends MenuItem {
   quantity: number
+  cartKey?: string
+  selectedProtein?: CustomizationOption | null
+  selectedWrapper?: CustomizationOption | null
+  notes?: string
+  customBuild?: boolean
+  customBuildNotes?: string
+  unitChoices?: CustomizationOption[]
 }
 
 export interface Category {

@@ -13,6 +13,7 @@ export interface CartItem {
   notes?: string
   customBuild?: boolean
   customBuildNotes?: string
+  unitChoices?: CustomizationOption[]
 }
 
 export interface POSState {

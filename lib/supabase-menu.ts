@@ -22,6 +22,8 @@ export interface Product {
   protein_options?: CustomizationOption[] | null
   wrapper_options?: CustomizationOption[] | null
   allow_custom_build?: boolean
+  per_unit_choice?: boolean
+  choice_count?: number | null
 }
 
 export interface Category {

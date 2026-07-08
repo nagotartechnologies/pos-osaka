@@ -103,6 +103,10 @@ export default function POSPage() {
           hasCustomChange={pos.hasCustomChange}
           onConfirm={pos.confirmCustomization}
           onClose={() => pos.setCustomizeProduct(null)}
+          isPerUnit={pos.isPerUnit}
+          perUnitComplete={pos.perUnitComplete}
+          unitChoices={pos.unitChoices}
+          setUnitChoices={pos.setUnitChoices}
         />
       )}
 
