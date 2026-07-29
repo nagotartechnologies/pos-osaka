@@ -8,7 +8,7 @@ import { loadLogoForTheme, loadBusinessName, loadWhatsApp, loadBankData, loadAdd
 import { getAllConfig, getConfigValue } from "@/lib/supabase-config"
 import { addOrder } from "@/lib/supabase-orders"
 import { uploadImage, isCloudinaryConfigured, optimizeCloudinaryUrl } from "@/lib/cloudinary"
-import { getAvailableProducts, getCategories as getDbCategories } from "@/lib/supabase-menu"
+import { getAvailableProducts, getCategories as getDbCategories, isNewProduct, sortNewFirst } from "@/lib/supabase-menu"
 import { parseSchedule, checkStoreOpen, DAY_KEYS, DAY_LABELS, type WeekSchedule } from "@/lib/schedule"
 import { MapPin, Clock, Star, Sparkles, Minus, Plus, ShoppingBag, X, Trash2, ChevronLeft, ChevronRight, Truck, Store, Banknote, CreditCard, ArrowRightLeft, CheckCircle2, User, Phone, MessageSquare, Upload, Loader2, ImageIcon, Palette, Beef, Droplets } from "lucide-react"
 
@@ -162,7 +162,7 @@ export default function CartaPage() {
 
       // Cargar productos y categorías
       const [prods, cats] = await Promise.all([getAvailableProducts(), getDbCategories()])
-      setMenuItems(prods.map((p) => ({ id: p.id, name: p.name, price: Number(p.price), image: p.image, category: p.category, description: p.description || "", protein_options: p.protein_options || null, wrapper_options: p.wrapper_options || null, allow_custom_build: p.allow_custom_build || false, per_unit_choice: p.per_unit_choice || false, choice_count: p.choice_count || null })))
+      setMenuItems(sortNewFirst(prods.map((p) => ({ id: p.id, name: p.name, price: Number(p.price), image: p.image, category: p.category, description: p.description || "", protein_options: p.protein_options || null, wrapper_options: p.wrapper_options || null, allow_custom_build: p.allow_custom_build || false, per_unit_choice: p.per_unit_choice || false, choice_count: p.choice_count || null, created_at: p.created_at })), (i) => i.created_at))
       if (cats.length > 0) {
         setCategories([{ id: "all", name: "Todo" }, ...cats.map((c) => ({ id: c.id, name: c.name }))])
       }
@@ -178,6 +178,8 @@ export default function CartaPage() {
     if (activeCategory === "all") return menuItems
     return menuItems.filter((item) => item.category === activeCategory)
   }, [activeCategory, menuItems])
+
+  const newItems = useMemo(() => menuItems.filter((i) => isNewProduct(i.created_at)), [menuItems])
 
   const getCategoryName = (catId: string) => {
     return categories.find((c) => c.id === catId)?.name || catId
@@ -666,7 +668,21 @@ export default function CartaPage() {
             ))}
           </div>
         ) : activeCategory === "all" ? (
-          categories.filter((c) => c.id !== "all").map((cat) => {
+          <>
+          {newItems.length > 0 && (
+            <div className="mb-6">
+              <h2 className="text-[13px] font-bold uppercase tracking-wide mb-3 px-1 flex items-center gap-1.5" style={{ color: "#d97706" }}>
+                <Sparkles className="h-3.5 w-3.5" />
+                Prueba nuestro nuevo producto
+              </h2>
+              <div className="space-y-2.5">
+                {newItems.map((item) => (
+                  <MenuCard key={`new-${item.id}`} item={item} qty={getItemQty(item.id)} onAdd={addToCart} onRemove={removeFromCart} onImageClick={setDetailItem} onBuildCustom={openBuildCustom} />
+                ))}
+              </div>
+            </div>
+          )}
+          {categories.filter((c) => c.id !== "all").map((cat) => {
             const catItems = menuItems.filter((i) => i.category === cat.id)
             if (catItems.length === 0) return null
             return (
@@ -679,7 +695,8 @@ export default function CartaPage() {
                 </div>
               </div>
             )
-          })
+          })}
+          </>
         ) : (
           <div className="space-y-2.5">
             {filteredItems.map((item) => (
@@ -1736,6 +1753,15 @@ function MenuCard({ item, qty, onAdd, onRemove, onImageClick, onBuildCustom }: {
       {/* Imagen */}
       <div className="relative h-24 w-24 flex-shrink-0 overflow-hidden rounded-lg cursor-pointer" onClick={() => onImageClick(item)}>
         <Image src={optimizeCloudinaryUrl(item.image, 200)} alt={item.name} fill className="object-cover" sizes="96px" loading="lazy" />
+        {isNewProduct(item.created_at) && (
+          <div className="absolute top-1 left-1 flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wide text-white shadow-sm animate-pulse" style={{ background: "#f59e0b" }}>
+            <span className="relative flex h-1.5 w-1.5">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-white opacity-75" />
+              <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-white" />
+            </span>
+            Nuevo
+          </div>
+        )}
         {qty > 0 && (
           <div className="absolute top-1 right-1 flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-black text-white" style={{ background: "#c1272d" }}>
             {qty}
@@ -1747,6 +1773,9 @@ function MenuCard({ item, qty, onAdd, onRemove, onImageClick, onBuildCustom }: {
       <div className="flex-1 min-w-0 flex flex-col justify-between py-0.5">
         <div>
           <p className="text-[13px] font-semibold leading-tight" style={{ color: "#1a1210" }}>{item.name}</p>
+          {isNewProduct(item.created_at) && (
+            <p className="text-[10px] font-bold mt-0.5" style={{ color: "#d97706" }}>Prueba nuestro nuevo producto</p>
+          )}
           {item.description && (
             <p className="text-[11px] leading-snug mt-0.5 line-clamp-2" style={{ color: "#8c7e6a" }}>{item.description}</p>
           )}

@@ -32,6 +32,29 @@ export interface Category {
   sort_order: number
 }
 
+// ─── Productos nuevos ───
+
+export const NEW_PRODUCT_DAYS = 14
+
+export function isNewProduct(createdAt?: string | null): boolean {
+  if (!createdAt) return false
+  const created = new Date(createdAt).getTime()
+  if (Number.isNaN(created)) return false
+  return Date.now() - created < NEW_PRODUCT_DAYS * 24 * 60 * 60 * 1000
+}
+
+export function sortNewFirst<T>(items: T[], getCreatedAt: (item: T) => string | undefined | null): T[] {
+  return [...items].sort((a, b) => {
+    const aNew = isNewProduct(getCreatedAt(a))
+    const bNew = isNewProduct(getCreatedAt(b))
+    if (aNew !== bNew) return aNew ? -1 : 1
+    if (aNew && bNew) {
+      return new Date(getCreatedAt(b) || 0).getTime() - new Date(getCreatedAt(a) || 0).getTime()
+    }
+    return 0
+  })
+}
+
 // ─── Productos ───
 
 export async function getProducts(): Promise<Product[]> {

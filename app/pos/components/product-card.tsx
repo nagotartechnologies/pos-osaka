@@ -2,7 +2,7 @@
 
 import Image from "next/image"
 import { optimizeCloudinaryUrl } from "@/lib/cloudinary"
-import type { Product } from "@/lib/supabase-menu"
+import { isNewProduct, type Product } from "@/lib/supabase-menu"
 
 interface ProductCardProps {
   product: Product
@@ -28,6 +28,15 @@ export function ProductCard({ product, qty, onAdd, onBuildCustom }: ProductCardP
           sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 20vw"
           loading="lazy"
         />
+        {isNewProduct(product.created_at) && (
+          <div className="absolute top-1.5 left-1.5 flex items-center gap-1 rounded-full bg-amber-500 px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wide text-white shadow animate-pulse">
+            <span className="relative flex h-1.5 w-1.5">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-white opacity-75" />
+              <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-white" />
+            </span>
+            Nuevo
+          </div>
+        )}
         {qty > 0 && (
           <div className="absolute top-1.5 right-1.5 flex h-6 min-w-[24px] items-center justify-center rounded-full bg-primary px-1.5 text-[11px] font-black text-primary-foreground shadow">
             {qty}

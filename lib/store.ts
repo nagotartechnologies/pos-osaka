@@ -15,6 +15,7 @@ export interface MenuItem {
   allow_custom_build?: boolean
   per_unit_choice?: boolean
   choice_count?: number | null
+  created_at?: string
 }
 
 export interface CartItem extends MenuItem {

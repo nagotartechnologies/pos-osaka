@@ -1,7 +1,7 @@
 "use client"
 
 import { Search } from "lucide-react"
-import type { Product } from "@/lib/supabase-menu"
+import { sortNewFirst, type Product } from "@/lib/supabase-menu"
 import { ProductCard } from "./product-card"
 import { TopSellers } from "./top-sellers"
 
@@ -34,6 +34,7 @@ export function ProductGrid({
   loading,
 }: ProductGridProps) {
   const showTopSellers = selectedCat === "all" && !search
+  const sorted = sortNewFirst(filtered, (p) => p.created_at)
 
   return (
     <div className="flex flex-col h-full min-h-0">
@@ -112,7 +113,7 @@ export function ProductGrid({
             )}
 
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
-              {filtered.map((product) => (
+              {sorted.map((product) => (
                 <ProductCard
                   key={product.id}
                   product={product}
