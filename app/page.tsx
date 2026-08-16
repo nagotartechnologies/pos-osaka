@@ -5,6 +5,7 @@ import { DollarSign, TrendingUp, Clock, Banknote, CreditCard, ArrowRightLeft, Ch
 import { subscribeToOrders, getOrdersByDate, type SupabaseOrder } from "@/lib/supabase-orders"
 import { loadBusinessName, isAuthenticated } from "@/lib/config-store"
 import { getConfigValue, setConfigValue } from "@/lib/supabase-config"
+import { resetDebitDeliveryLimit } from "@/lib/debit-limit"
 
 function toLocalDateString(date: Date): string {
   const y = date.getFullYear()
@@ -116,6 +117,7 @@ export default function VentasPage() {
     if (ok) {
       setDayStart(now)
       setDayClose("")
+      resetDebitDeliveryLimit(now).catch(() => {})
       // Enviar mensajes post-venta a clientes de ayer
       fetch("/api/whatsapp/post-venta", {
         method: "POST",

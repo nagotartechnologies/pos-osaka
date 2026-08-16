@@ -10,6 +10,7 @@ import { normalizePhone } from "@/lib/phone"
 // ── Tipos ──────────────────────────────────────────────────────────
 export type OrderStatus = "recibido" | "cotizado" | "preparando" | "en-camino" | "entregado" | "cancelado"
 export type PaymentMethod = "efectivo" | "transferencia" | "tarjeta"
+export type CardType = "debito" | "credito"
 export type PaymentStatus = "na" | "pendiente" | "aprobado" | "rechazado"
 export type DeliveryType = "delivery" | "retiro"
 
@@ -40,6 +41,7 @@ export interface SupabaseOrder {
   delivery_type: DeliveryType
   address: string
   payment_method: PaymentMethod
+  card_type?: CardType | null
   payment_status: PaymentStatus
   receipt_url: string | null
   cash_amount: number | null
@@ -142,6 +144,7 @@ export interface AddOrderData {
   deliveryType: DeliveryType
   address: string
   paymentMethod: PaymentMethod
+  cardType?: CardType | null
   cashAmount: number | null
   change: number | null
   receiptUrl?: string | null
@@ -195,6 +198,7 @@ export async function addOrder(data: AddOrderData): Promise<SupabaseOrder | null
     delivery_type: data.deliveryType,
     address: data.address,
     payment_method: data.paymentMethod,
+    card_type: data.cardType ?? null,
     payment_status: isTransfer ? "pendiente" : "na",
     receipt_url: data.receiptUrl || null,
     cash_amount: data.cashAmount,
@@ -265,6 +269,21 @@ export async function deleteOrder(id: string): Promise<boolean> {
   const { error } = await sb.from("orders").delete().eq("id", id)
   if (error) { console.error("deleteOrder error:", error); return false }
   return true
+}
+
+export async function getDebitDeliveryCountSince(sinceIso: string): Promise<number> {
+  const sb = getClient()
+  if (!sb) return 0
+  const { count, error } = await sb
+    .from("orders")
+    .select("*", { count: "exact", head: true })
+    .eq("delivery_type", "delivery")
+    .eq("payment_method", "tarjeta")
+    .eq("card_type", "debito")
+    .gte("created_at", sinceIso)
+    .neq("status", "cancelado")
+  if (error) { console.error("getDebitDeliveryCountSince error:", error); return 0 }
+  return count || 0
 }
 
 export async function getTodaySales(): Promise<{ total: number; count: number }> {

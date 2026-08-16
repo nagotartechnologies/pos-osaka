@@ -7,6 +7,7 @@ import { type MenuItem, type CustomizationOption } from "@/lib/store"
 import { loadLogoForTheme, loadBusinessName, loadWhatsApp, loadBankData, loadAddress } from "@/lib/config-store"
 import { getAllConfig, getConfigValue } from "@/lib/supabase-config"
 import { addOrder } from "@/lib/supabase-orders"
+import { isDebitDeliveryBlocked } from "@/lib/debit-limit"
 import { uploadImage, isCloudinaryConfigured, optimizeCloudinaryUrl } from "@/lib/cloudinary"
 import { getAvailableProducts, getCategories as getDbCategories, isNewProduct, sortNewFirst } from "@/lib/supabase-menu"
 import { parseSchedule, checkStoreOpen, DAY_KEYS, DAY_LABELS, type WeekSchedule } from "@/lib/schedule"
@@ -79,6 +80,8 @@ export default function CartaPage() {
   const [deliveryType, setDeliveryType] = useState<DeliveryType>("delivery")
   const [address, setAddress] = useState("")
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("")
+  const [cardType, setCardType] = useState<"debito" | "credito" | null>(null)
+  const [debitBlocked, setDebitBlocked] = useState(false)
   const [cashAmount, setCashAmount] = useState("")
   const [orderSent, setOrderSent] = useState(false)
   const [submittingOrder, setSubmittingOrder] = useState(false)
@@ -180,6 +183,10 @@ export default function CartaPage() {
   }, [activeCategory, menuItems])
 
   const newItems = useMemo(() => menuItems.filter((i) => isNewProduct(i.created_at)), [menuItems])
+
+  useEffect(() => {
+    if (checkoutStep === 3) isDebitDeliveryBlocked().then(setDebitBlocked).catch(() => {})
+  }, [checkoutStep])
 
   const getCategoryName = (catId: string) => {
     return categories.find((c) => c.id === catId)?.name || catId
@@ -348,6 +355,8 @@ export default function CartaPage() {
     if (deliveryType === "retiro" && !clientName.trim()) return false
     if (hasCustomBuild) return true // Sin pago, el vendedor cotiza
     if (!paymentMethod) return false
+    if (paymentMethod === "tarjeta" && !cardType) return false
+    if (paymentMethod === "tarjeta" && cardType === "debito" && deliveryType === "delivery" && debitBlocked) return false
     if (paymentMethod === "efectivo" && cashNum < cartTotal) return false
     if (paymentMethod === "transferencia" && !receiptFile && !receiptUrl) return false
     return true
@@ -417,6 +426,7 @@ export default function CartaPage() {
         deliveryType,
         address: deliveryType === "delivery" ? address.trim() : "",
         paymentMethod: (hasCustomBuild ? "efectivo" : (paymentMethod || "efectivo")) as "efectivo" | "transferencia" | "tarjeta",
+        cardType: !hasCustomBuild && paymentMethod === "tarjeta" ? cardType : null,
         cashAmount: hasCustomBuild ? null : (paymentMethod === "efectivo" ? cashNum : null),
         change: hasCustomBuild ? null : (paymentMethod === "efectivo" ? changeAmount : null),
         receiptUrl: hasCustomBuild ? null : (finalReceiptUrl || null),
@@ -461,6 +471,7 @@ export default function CartaPage() {
       setCashAmount("")
       setCheckoutStep(0)
       setPaymentMethod("")
+      setCardType(null)
       setDeliveryType("delivery")
       setReceiptFile(null)
       setReceiptPreview("")
@@ -1438,7 +1449,7 @@ export default function CartaPage() {
                       { id: "transferencia" as PaymentMethod, icon: ArrowRightLeft, label: "Transfer." },
                       { id: "tarjeta" as PaymentMethod, icon: CreditCard, label: "Tarjeta" },
                     ]).map(pm => (
-                      <button key={pm.id} onClick={() => setPaymentMethod(pm.id)}
+                      <button key={pm.id} onClick={() => { setPaymentMethod(pm.id); if (pm.id !== "tarjeta") setCardType(null) }}
                         className="flex flex-col items-center gap-1.5 rounded-xl p-3.5 border transition-all"
                         style={paymentMethod === pm.id
                           ? { borderColor: "#c1272d", background: "#fef7f7", color: "#c1272d" }
@@ -1546,9 +1557,36 @@ export default function CartaPage() {
                   )}
 
                   {paymentMethod === "tarjeta" && (
-                    <div className="rounded-xl p-4 text-center border" style={{ borderColor: "#e8e2d8", background: "#faf7f2" }}>
-                      <CreditCard className="h-8 w-8 mx-auto mb-2" style={{ color: "#b5a898" }} />
-                      <p className="text-sm" style={{ color: "#1a1210" }}>Pago con tarjeta al momento de la entrega</p>
+                    <div className="space-y-3">
+                      <div className="grid grid-cols-2 gap-2">
+                        <button onClick={() => setCardType("debito")} disabled={deliveryType === "delivery" && debitBlocked}
+                          className="rounded-xl p-3 border text-xs font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                          style={cardType === "debito"
+                            ? { borderColor: "#c1272d", background: "#fef7f7", color: "#c1272d" }
+                            : { borderColor: "#e8e2d8", background: "#fff", color: "#8c7e6a" }
+                          }
+                        >
+                          Débito
+                        </button>
+                        <button onClick={() => setCardType("credito")}
+                          className="rounded-xl p-3 border text-xs font-bold transition-all"
+                          style={cardType === "credito"
+                            ? { borderColor: "#c1272d", background: "#fef7f7", color: "#c1272d" }
+                            : { borderColor: "#e8e2d8", background: "#fff", color: "#8c7e6a" }
+                          }
+                        >
+                          Crédito
+                        </button>
+                      </div>
+                      {deliveryType === "delivery" && debitBlocked && (
+                        <div className="rounded-xl p-3 text-center border" style={{ borderColor: "#fde68a", background: "#fef3cd" }}>
+                          <p className="text-xs font-semibold" style={{ color: "#92400e" }}>Débito detenido por el momento por problemas técnicos. Crédito activo.</p>
+                        </div>
+                      )}
+                      <div className="rounded-xl p-4 text-center border" style={{ borderColor: "#e8e2d8", background: "#faf7f2" }}>
+                        <CreditCard className="h-8 w-8 mx-auto mb-2" style={{ color: "#b5a898" }} />
+                        <p className="text-sm" style={{ color: "#1a1210" }}>Pago con tarjeta al momento de la entrega</p>
+                      </div>
                     </div>
                   )}
 

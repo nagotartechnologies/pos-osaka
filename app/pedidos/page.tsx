@@ -603,6 +603,8 @@ Responde:
   const paymentLabel = (o: SupabaseOrder) => {
     if (o.payment_method === "efectivo") return "Efectivo"
     if (o.payment_method === "transferencia") return "Transferencia"
+    if (o.card_type === "debito") return "Débito"
+    if (o.card_type === "credito") return "Crédito"
     return "Tarjeta"
   }
 

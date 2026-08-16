@@ -108,6 +108,7 @@ CREATE TABLE public.orders (
     delivery_type text DEFAULT 'delivery'::text NOT NULL,
     address text DEFAULT ''::text,
     payment_method text DEFAULT 'efectivo'::text NOT NULL,
+    card_type text,
     payment_status text DEFAULT 'na'::text NOT NULL,
     receipt_url text,
     cash_amount numeric,
