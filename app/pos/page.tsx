@@ -74,6 +74,7 @@ export default function POSPage() {
             cashAmount={pos.cashAmount}
             setCashAmount={pos.setCashAmount}
             deliveryFee={pos.deliveryFee}
+            cardPaymentsEnabled={pos.cardPaymentsEnabled}
             submitting={pos.submitting}
             onSubmit={handleSubmit}
           />

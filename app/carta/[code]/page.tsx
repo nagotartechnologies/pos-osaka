@@ -82,6 +82,7 @@ export default function CartaPage() {
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("")
   const [cardType, setCardType] = useState<"debito" | "credito" | null>(null)
   const [debitBlocked, setDebitBlocked] = useState(false)
+  const [cardPaymentsEnabled, setCardPaymentsEnabled] = useState(false)
   const [cashAmount, setCashAmount] = useState("")
   const [orderSent, setOrderSent] = useState(false)
   const [submittingOrder, setSubmittingOrder] = useState(false)
@@ -143,6 +144,7 @@ export default function CartaPage() {
       if (dbConfig.deliveryZoneEnabled === "true" && dbConfig.deliveryZoneMsg) {
         setDeliveryZoneMsg(dbConfig.deliveryZoneMsg)
       }
+      setCardPaymentsEnabled(dbConfig.cardPaymentsEnabled === "true")
       if (dbConfig.bankData) {
         try { setBankData(JSON.parse(dbConfig.bankData)) } catch { setBankData(loadBankData()) }
       } else {
@@ -1443,11 +1445,11 @@ export default function CartaPage() {
               {checkoutStep === 3 && !orderSent && !hasCustomBuild && (
                 <div className="space-y-4">
                   <p className="text-xs font-medium" style={{ color: "#8c7e6a" }}>¿Cómo vas a pagar?</p>
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className={`grid ${cardPaymentsEnabled ? "grid-cols-3" : "grid-cols-2"} gap-2`}>
                     {([
                       { id: "efectivo" as PaymentMethod, icon: Banknote, label: "Efectivo" },
                       { id: "transferencia" as PaymentMethod, icon: ArrowRightLeft, label: "Transfer." },
-                      { id: "tarjeta" as PaymentMethod, icon: CreditCard, label: "Tarjeta" },
+                      ...(cardPaymentsEnabled ? [{ id: "tarjeta" as PaymentMethod, icon: CreditCard, label: "Tarjeta" }] : []),
                     ]).map(pm => (
                       <button key={pm.id} onClick={() => { setPaymentMethod(pm.id); if (pm.id !== "tarjeta") setCardType(null) }}
                         className="flex flex-col items-center gap-1.5 rounded-xl p-3.5 border transition-all"

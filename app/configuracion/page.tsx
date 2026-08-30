@@ -152,6 +152,7 @@ export default function ConfiguracionPage() {
   const [qrMessage, setQrMessage] = useState("")
   const [qrEditing, setQrEditing] = useState<string | null>(null)
   const [waTestStatus, setWaTestStatus] = useState<"idle" | "testing" | "ok" | "error" | "not_configured">("idle")
+  const [cardPaymentsEnabled, setCardPaymentsEnabled] = useState(false)
 
   // Cargar config desde Supabase + localStorage
   useEffect(() => {
@@ -199,6 +200,7 @@ export default function ConfiguracionPage() {
         }
         if (dbConfig.deliveryFee) setDeliveryFee(dbConfig.deliveryFee)
         setDeliveryZoneEnabled(dbConfig.deliveryZoneEnabled === "true")
+        setCardPaymentsEnabled(dbConfig.cardPaymentsEnabled === "true")
         if (dbConfig.deliveryZoneMsg) setDeliveryZoneMsg(dbConfig.deliveryZoneMsg)
         if (dbConfig.schedule) {
           setSchedule(parseSchedule(dbConfig.schedule, dbConfig.horaApertura, dbConfig.horaCierre))
@@ -300,6 +302,7 @@ export default function ConfiguracionPage() {
       deliveryFee: deliveryFee,
       deliveryZoneEnabled: String(deliveryZoneEnabled),
       deliveryZoneMsg: deliveryZoneMsg,
+      cardPaymentsEnabled: String(cardPaymentsEnabled),
       schedule: JSON.stringify(schedule),
       bankData: JSON.stringify(bankData),
       themeColor: (() => {
@@ -1187,6 +1190,27 @@ export default function ConfiguracionPage() {
                       ))}
                     </div>
                   )}
+                </div>
+              </SectionCard>
+
+              <SectionCard title="Pago con Tarjeta" description="Habilita o deshabilita la opción de pago con tarjeta (débito/crédito) en el POS y la carta digital">
+                <div className="space-y-4 max-w-md">
+                  <div className="flex items-center justify-between rounded-xl border border-border bg-background px-4 py-3">
+                    <div className="flex items-center gap-3">
+                      <CreditCard className="h-5 w-5 text-muted-foreground" />
+                      <div>
+                        <p className="text-xs font-semibold text-foreground">Pago con Tarjeta</p>
+                        <p className="text-[10px] text-muted-foreground mt-0.5">{cardPaymentsEnabled ? "Habilitado — los clientes pueden pagar con tarjeta" : "Deshabilitado — la opción de tarjeta está oculta"}</p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setCardPaymentsEnabled((v) => !v)}
+                      className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none ${cardPaymentsEnabled ? "bg-emerald-500" : "bg-muted"}`}
+                    >
+                      <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${cardPaymentsEnabled ? "translate-x-5" : "translate-x-0"}`} />
+                    </button>
+                  </div>
                 </div>
               </SectionCard>
 

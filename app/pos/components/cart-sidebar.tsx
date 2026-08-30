@@ -33,6 +33,7 @@ interface CartSidebarProps {
   cashAmount: string
   setCashAmount: (v: string) => void
   deliveryFee: number
+  cardPaymentsEnabled: boolean
   submitting: boolean
   onSubmit: () => void
 }
@@ -63,6 +64,7 @@ export function CartSidebar({
   cashAmount,
   setCashAmount,
   deliveryFee,
+  cardPaymentsEnabled,
   submitting,
   onSubmit,
 }: CartSidebarProps) {
@@ -236,10 +238,10 @@ export function CartSidebar({
               {/* Payment */}
               <div>
                 <label className="text-[10px] font-semibold text-muted-foreground mb-1 block">Pago</label>
-                <div className="grid grid-cols-3 gap-1.5">
+                <div className={`grid ${cardPaymentsEnabled ? "grid-cols-3" : "grid-cols-2"} gap-1.5`}>
                   {([
                     { id: "efectivo" as PaymentMethod, label: "Efectivo", Icon: Banknote },
-                    { id: "tarjeta" as PaymentMethod, label: "Tarjeta", Icon: CreditCard },
+                    ...(cardPaymentsEnabled ? [{ id: "tarjeta" as PaymentMethod, label: "Tarjeta", Icon: CreditCard }] : []),
                     { id: "transferencia" as PaymentMethod, label: "Transfer.", Icon: ArrowRightLeft },
                   ]).map((pm) => (
                     <button

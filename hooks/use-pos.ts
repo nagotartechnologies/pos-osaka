@@ -29,6 +29,7 @@ export function usePOS() {
   const [cardType, setCardType] = useState<"debito" | "credito" | null>(null)
   const [cashAmount, setCashAmount] = useState("")
   const [deliveryFee, setDeliveryFee] = useState(0)
+  const [cardPaymentsEnabled, setCardPaymentsEnabled] = useState(false)
   const [submitting, setSubmitting] = useState(false)
 
   // Top sellers
@@ -55,6 +56,7 @@ export function usePOS() {
         setProducts(prods)
         setCategories(cats.map((c) => ({ id: c.id, name: c.name })))
         if (cfg.deliveryFee) setDeliveryFee(Number(cfg.deliveryFee) || 0)
+        setCardPaymentsEnabled(cfg.cardPaymentsEnabled === "true")
 
         // Compute top sellers from last 7 days
         const counts = new Map<string, number>()
@@ -357,6 +359,7 @@ export function usePOS() {
     cashAmount,
     setCashAmount,
     deliveryFee,
+    cardPaymentsEnabled,
     submitting,
     handleSubmit,
     // Customization
