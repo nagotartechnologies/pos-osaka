@@ -20,6 +20,7 @@ const SALSAS: MenuItem[] = [
   { id: "salsa-soya", name: "Salsa Soya", price: 0, image: "", category: "salsas" },
   { id: "salsa-agridulce", name: "Salsa Agridulce", price: 0, image: "", category: "salsas" },
   { id: "salsa-acevichada", name: "Salsa Acevichada", price: 500, image: "", category: "salsas" },
+  { id: "salsa-teriyaki", name: "Salsa Teriyaki", price: 500, image: "", category: "salsas" },
 ]
 const MAX_FREE_SALSAS = 999
 
@@ -112,6 +113,8 @@ export default function CartaPage() {
   const [storeClosed, setStoreClosed] = useState(false)
   const [storeSchedule, setStoreSchedule] = useState<WeekSchedule | null>(null)
   const [closedInfo, setClosedInfo] = useState<{ nextDay: string | null; nextTime: string | null }>({ nextDay: null, nextTime: null })
+  const [highDemandMsg, setHighDemandMsg] = useState("")
+  const [acceptedDelay, setAcceptedDelay] = useState(false)
   const [ordersBlocked, setOrdersBlocked] = useState(false)
   const [ordersBlockedMsg, setOrdersBlockedMsg] = useState("")
   const [deliveryZoneMsg, setDeliveryZoneMsg] = useState("")
@@ -134,6 +137,7 @@ export default function CartaPage() {
       setStoreWhatsApp(dbConfig.whatsapp || loadWhatsApp())
       setStoreAddress(dbConfig.direccion || loadAddress())
       if (dbConfig.deliveryFee) setDeliveryFee(Number(dbConfig.deliveryFee) || 0)
+      if (dbConfig.highDemandMsg) setHighDemandMsg(dbConfig.highDemandMsg)
       if (dbConfig.ordersBlocked === "true") {
         setOrdersBlocked(true)
         setOrdersBlockedMsg(dbConfig.ordersBlockedMsg || "")
@@ -601,6 +605,14 @@ export default function CartaPage() {
 
   return (
     <div className="min-h-screen pb-32" style={{ background: "#faf7f2" }}>
+
+      {/* ═══ BANNER ALTA DEMANDA ═══ */}
+      {highDemandMsg && (
+        <div className="sticky top-0 z-30 px-4 py-2.5 flex items-center gap-2.5 text-sm" style={{ background: "#fef3cd", borderBottom: "1px solid #fde68a" }}>
+          <span className="text-base flex-shrink-0">🔥</span>
+          <p className="font-medium" style={{ color: "#92400e" }}>{highDemandMsg}</p>
+        </div>
+      )}
 
       {/* ═══ HEADER ═══ */}
       <div style={{ background: "#1a1210" }}>
@@ -1234,7 +1246,7 @@ export default function CartaPage() {
                           <p className="text-[11px] font-bold uppercase tracking-wide" style={{ color: showSalsaError ? "#c1272d" : "#8c7e6a" }}><span className="inline-flex items-center gap-1"><Droplets className="h-3 w-3" /> Salsas</span> <span style={{ color: "#c1272d" }}>*</span></p>
                           {showSalsaError && <p className="text-[10px] font-semibold" style={{ color: "#c1272d" }}>⚠ Debes elegir al menos 1 salsa</p>}
                         </div>
-                        <p className="text-[10px]" style={{ color: "#b5a898" }}>Soya y Agridulce gratis (máx. {MAX_FREE_SALSAS}) · Acevichada $500</p>
+                        <p className="text-[10px]" style={{ color: "#b5a898" }}>Soya y Agridulce gratis (máx. {MAX_FREE_SALSAS}) · Acevichada y Teriyaki $500</p>
                       </div>
                       <div className="divide-y divide-[#f0ebe3]">
                         {SALSAS.map((salsa) => {
@@ -1624,6 +1636,21 @@ export default function CartaPage() {
                   <span className="text-xl font-black" style={{ color: hasCustomBuild && checkoutStep === 3 ? "#d97706" : "#1a1210" }}>$ {cartTotal.toLocaleString("es-CL")}</span>
                 </div>
 
+                {/* Aceptación de retraso por alta demanda */}
+                {highDemandMsg && checkoutStep === 3 && !acceptedDelay && (
+                  <label className="flex items-start gap-2.5 rounded-xl p-3 cursor-pointer" style={{ background: "#fef3cd", border: "1px solid #fde68a" }}>
+                    <input
+                      type="checkbox"
+                      checked={acceptedDelay}
+                      onChange={(e) => setAcceptedDelay(e.target.checked)}
+                      className="mt-0.5 h-4 w-4 rounded accent-amber-600 flex-shrink-0"
+                    />
+                    <span className="text-xs font-medium" style={{ color: "#92400e" }}>
+                      Entiendo que hay alta demanda y mi pedido podría tener un tiempo de espera mayor al habitual.
+                    </span>
+                  </label>
+                )}
+
                 {checkoutStep < 3 ? (
                   <button
                     onClick={() => {
@@ -1646,7 +1673,7 @@ export default function CartaPage() {
                 ) : hasCustomBuild ? (
                   <button
                     onClick={handleSubmitOrder}
-                    disabled={!canSubmit() || submittingOrder}
+                    disabled={!canSubmit() || submittingOrder || !!(highDemandMsg && !acceptedDelay)}
                     className="w-full flex items-center justify-center gap-2 rounded-2xl py-3.5 text-sm font-bold text-white transition-all active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed"
                     style={{ background: "#d97706" }}
                   >
@@ -1662,7 +1689,7 @@ export default function CartaPage() {
                 ) : (
                   <button
                     onClick={handleSubmitOrder}
-                    disabled={!canSubmit() || uploadingReceipt || submittingOrder}
+                    disabled={!canSubmit() || uploadingReceipt || submittingOrder || !!(highDemandMsg && !acceptedDelay)}
                     className="w-full flex items-center justify-center gap-2 rounded-2xl py-3.5 text-sm font-bold text-white transition-all active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed"
                     style={{ background: "#1a1210" }}
                   >

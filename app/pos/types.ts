@@ -39,6 +39,7 @@ export const SALSAS = [
   { id: "salsa-soya", name: "Salsa Soya", price: 0 },
   { id: "salsa-agridulce", name: "Salsa Agridulce", price: 0 },
   { id: "salsa-acevichada", name: "Salsa Acevichada", price: 500 },
+  { id: "salsa-teriyaki", name: "Salsa Teriyaki", price: 500 },
 ] as const
 
 export const MAX_FREE_SALSAS = 5

@@ -133,7 +133,7 @@ export function CartSidebar({
             {/* Salsas */}
             <div className="border-t border-border/50 pt-3">
               <p className="text-[10px] font-semibold text-muted-foreground mb-1">🫙 Salsas</p>
-              <p className="text-[9px] text-muted-foreground mb-1.5">Soya y Agridulce gratis (máx. {MAX_FREE_SALSAS}) · Acevichada $500</p>
+              <p className="text-[9px] text-muted-foreground mb-1.5">Soya y Agridulce gratis (máx. {MAX_FREE_SALSAS}) · Acevichada y Teriyaki $500</p>
               <div className="space-y-1">
                 {SALSAS.map((salsa) => {
                   const qty = getCartQty(salsa.id)
