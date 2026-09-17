@@ -32,6 +32,7 @@ import {
   Calendar,
   Flame,
   Ban,
+  Tag,
 } from "lucide-react"
 import {
   subscribeToOrders,
@@ -64,6 +65,12 @@ import { ConfirmModal } from "@/components/confirm-modal"
 import { ToastContainer, createToast, type ToastData } from "@/components/toast"
 import { useNotificationSound } from "@/hooks/use-notification-sound"
 import { useWhatsAppActions } from "@/hooks/use-whatsapp-actions"
+
+interface PromoBanner {
+  id: string
+  text: string
+  color: "red" | "green"
+}
 
 const COLUMNS: { id: OrderStatus; label: string; icon: typeof ClipboardList; color: string; bg: string; border: string; action: string }[] = [
   { id: "recibido",   label: "Recibido",   icon: ClipboardList, color: "text-blue-500",   bg: "bg-blue-500/10 border-blue-500/20",    border: "border-l-blue-500",   action: "Preparar" },
@@ -132,6 +139,11 @@ export default function PedidosPage() {
   const [ordersBlockedMsg, setOrdersBlockedMsg] = useState("")
   const [ordersBlockedInput, setOrdersBlockedInput] = useState("")
   const [ordersBlockedOpen, setOrdersBlockedOpen] = useState(false)
+  const [promoBanners, setPromoBanners] = useState<PromoBanner[]>([])
+  const [promoOpen, setPromoOpen] = useState(false)
+  const [promoDraft, setPromoDraft] = useState<PromoBanner[]>([])
+  const [promoNewText, setPromoNewText] = useState("")
+  const [promoNewColor, setPromoNewColor] = useState<"red" | "green">("green")
   const addToast = (msg: string, variant: ToastData["variant"] = "success") => setToasts((t) => [...t, createToast(msg, variant)])
   const dismissToast = (id: string) => setToasts((t) => t.filter((x) => x.id !== id))
 
@@ -269,6 +281,15 @@ Responde:
         const msg = cfg.ordersBlockedMsg || ""
         setOrdersBlockedMsg(msg)
         setOrdersBlockedInput(msg)
+      }
+      if (cfg.promoBanners) {
+        try {
+          const parsed = JSON.parse(cfg.promoBanners) as PromoBanner[]
+          if (Array.isArray(parsed)) {
+            setPromoBanners(parsed)
+            setPromoDraft(parsed)
+          }
+        } catch {}
       }
     })
   }, [])
@@ -712,6 +733,18 @@ Responde:
             <Ban className="h-3.5 w-3.5" />
             <span className="hidden sm:inline">{ordersBlocked ? "Pedidos pausados" : "Pausar"}</span>
           </button>
+          <button
+            onClick={() => { setPromoOpen(!promoOpen); setPromoDraft(promoBanners) }}
+            className={`flex items-center gap-1.5 rounded-xl border px-2 sm:px-3 py-1.5 sm:py-2 text-xs font-semibold transition-colors shadow-sm ${
+              promoBanners.length > 0
+                ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/20"
+                : "border-border bg-card text-muted-foreground hover:text-foreground hover:bg-accent"
+            }`}
+            title={promoBanners.length > 0 ? `${promoBanners.length} banner(s) de promoción activo(s)` : "Gestionar banners de promoción"}
+          >
+            <Tag className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">{promoBanners.length > 0 ? `Promos (${promoBanners.length})` : "Promos"}</span>
+          </button>
         </div>
       </div>
 
@@ -822,6 +855,135 @@ Responde:
             )}
             <button
               onClick={() => setHighDemandOpen(false)}
+              className="ml-auto rounded-lg border border-border px-3 py-2 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+            >
+              Cerrar
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Panel de banners de promoción */}
+      {promoOpen && (
+        <div className="mb-4 rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4 space-y-3">
+          <div className="flex items-center gap-2">
+            <Tag className="h-4 w-4 text-emerald-500" />
+            <p className="text-sm font-semibold text-emerald-700 dark:text-emerald-400">Banners de promoción</p>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Crea uno o varios banners que verán los clientes en la parte superior de la carta. Úsalos para anunciar promociones, descuentos o ofertas especiales.
+          </p>
+
+          {/* Lista de banners existentes */}
+          {promoDraft.length > 0 && (
+            <div className="space-y-2">
+              {promoDraft.map((banner, idx) => (
+                <div key={banner.id} className="flex items-start gap-2 rounded-lg border border-border bg-background p-2">
+                  <div
+                    className="mt-1.5 h-3 w-3 flex-shrink-0 rounded-full"
+                    style={{ background: banner.color === "red" ? "#c1272d" : "#2e7d32" }}
+                  />
+                  <textarea
+                    value={banner.text}
+                    onChange={(e) => {
+                      const next = [...promoDraft]
+                      next[idx] = { ...banner, text: e.target.value }
+                      setPromoDraft(next)
+                    }}
+                    rows={1}
+                    placeholder="Ej: 2x1 en rolls los lunes 🎉"
+                    className="flex-1 rounded-md border border-border bg-background px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500/50 resize-none"
+                  />
+                  <select
+                    value={banner.color}
+                    onChange={(e) => {
+                      const next = [...promoDraft]
+                      next[idx] = { ...banner, color: e.target.value as "red" | "green" }
+                      setPromoDraft(next)
+                    }}
+                    className="rounded-md border border-border bg-background px-1.5 py-1.5 text-xs focus:outline-none"
+                  >
+                    <option value="green">Verde</option>
+                    <option value="red">Rojo</option>
+                  </select>
+                  <button
+                    onClick={() => setPromoDraft(promoDraft.filter((b) => b.id !== banner.id))}
+                    className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md text-red-500 hover:bg-red-500/10 transition-colors"
+                    title="Eliminar banner"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Agregar nuevo banner */}
+          <div className="rounded-lg border border-dashed border-border p-2.5 space-y-2">
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Nuevo banner</p>
+            <textarea
+              value={promoNewText}
+              onChange={(e) => setPromoNewText(e.target.value)}
+              rows={1}
+              placeholder="Ej: 2x1 en rolls los lunes 🎉"
+              className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500/50 resize-none"
+            />
+            <div className="flex items-center gap-2">
+              <select
+                value={promoNewColor}
+                onChange={(e) => setPromoNewColor(e.target.value as "red" | "green")}
+                className="rounded-md border border-border bg-background px-1.5 py-1.5 text-xs focus:outline-none"
+              >
+                <option value="green">Verde</option>
+                <option value="red">Rojo</option>
+              </select>
+              <button
+                onClick={() => {
+                  const text = promoNewText.trim()
+                  if (!text) return
+                  const newBanner: PromoBanner = { id: `promo-${Date.now()}`, text, color: promoNewColor }
+                  setPromoDraft([...promoDraft, newBanner])
+                  setPromoNewText("")
+                }}
+                disabled={!promoNewText.trim()}
+                className="rounded-md bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                + Agregar
+              </button>
+            </div>
+          </div>
+
+          {/* Acciones */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={async () => {
+                const cleaned = promoDraft.filter((b) => b.text.trim())
+                const json = JSON.stringify(cleaned)
+                await setConfigValue("promoBanners", json)
+                setPromoBanners(cleaned)
+                setPromoOpen(false)
+                addToast(`🎉 ${cleaned.length} banner(s) de promoción guardado(s)`, "success")
+              }}
+              className="rounded-lg bg-emerald-500 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-600 transition-colors"
+            >
+              Guardar banners
+            </button>
+            {promoBanners.length > 0 && (
+              <button
+                onClick={async () => {
+                  await setConfigValue("promoBanners", "")
+                  setPromoBanners([])
+                  setPromoDraft([])
+                  setPromoOpen(false)
+                  addToast("Banners de promoción eliminados", "success")
+                }}
+                className="rounded-lg border border-border px-4 py-2 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+              >
+                Borrar todos
+              </button>
+            )}
+            <button
+              onClick={() => { setPromoOpen(false); setPromoDraft(promoBanners); setPromoNewText("") }}
               className="ml-auto rounded-lg border border-border px-3 py-2 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
             >
               Cerrar

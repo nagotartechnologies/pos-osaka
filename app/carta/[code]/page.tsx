@@ -118,6 +118,7 @@ export default function CartaPage() {
   const [ordersBlocked, setOrdersBlocked] = useState(false)
   const [ordersBlockedMsg, setOrdersBlockedMsg] = useState("")
   const [deliveryZoneMsg, setDeliveryZoneMsg] = useState("")
+  const [promoBanners, setPromoBanners] = useState<{ id: string; text: string; color: "red" | "green" }[]>([])
 
   // Validar código de acceso
   useEffect(() => {
@@ -138,6 +139,12 @@ export default function CartaPage() {
       setStoreAddress(dbConfig.direccion || loadAddress())
       if (dbConfig.deliveryFee) setDeliveryFee(Number(dbConfig.deliveryFee) || 0)
       if (dbConfig.highDemandMsg) setHighDemandMsg(dbConfig.highDemandMsg)
+      if (dbConfig.promoBanners) {
+        try {
+          const parsed = JSON.parse(dbConfig.promoBanners) as { id: string; text: string; color: "red" | "green" }[]
+          if (Array.isArray(parsed)) setPromoBanners(parsed)
+        } catch {}
+      }
       if (dbConfig.ordersBlocked === "true") {
         setOrdersBlocked(true)
         setOrdersBlockedMsg(dbConfig.ordersBlockedMsg || "")
@@ -606,11 +613,28 @@ export default function CartaPage() {
   return (
     <div className="min-h-screen pb-32" style={{ background: "#faf7f2" }}>
 
-      {/* ═══ BANNER ALTA DEMANDA ═══ */}
-      {highDemandMsg && (
-        <div className="sticky top-0 z-30 px-4 py-2.5 flex items-center gap-2.5 text-sm" style={{ background: "#fef3cd", borderBottom: "1px solid #fde68a" }}>
-          <span className="text-base flex-shrink-0">🔥</span>
-          <p className="font-medium" style={{ color: "#92400e" }}>{highDemandMsg}</p>
+      {/* ═══ BANNERS (alta demanda + promociones) ═══ */}
+      {(highDemandMsg || promoBanners.length > 0) && (
+        <div className="sticky top-0 z-30">
+          {highDemandMsg && (
+            <div className="px-4 py-2.5 flex items-center gap-2.5 text-sm" style={{ background: "#fef3cd", borderBottom: "1px solid #fde68a" }}>
+              <span className="text-base flex-shrink-0">🔥</span>
+              <p className="font-medium" style={{ color: "#92400e" }}>{highDemandMsg}</p>
+            </div>
+          )}
+          {promoBanners.map((banner) => (
+            <div
+              key={banner.id}
+              className="px-4 py-2.5 flex items-center gap-2.5 text-sm"
+              style={{
+                background: banner.color === "red" ? "#fee2e2" : "#dcfce7",
+                borderBottom: `1px solid ${banner.color === "red" ? "#fecaca" : "#bbf7d0"}`,
+              }}
+            >
+              <span className="text-base flex-shrink-0">{banner.color === "red" ? "🔥" : "🎉"}</span>
+              <p className="font-medium" style={{ color: banner.color === "red" ? "#991b1b" : "#166534" }}>{banner.text}</p>
+            </div>
+          ))}
         </div>
       )}
 
