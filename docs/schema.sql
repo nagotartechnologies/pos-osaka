@@ -25,6 +25,9 @@ CREATE TABLE public.products (
   protein_options jsonb,
   wrapper_options jsonb,
   allow_custom_build boolean DEFAULT false,
+  discount_pct numeric,
+  discount_start timestamp with time zone,
+  discount_end timestamp with time zone,
   CONSTRAINT products_pkey PRIMARY KEY (id)
 );
 

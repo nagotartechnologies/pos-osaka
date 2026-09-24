@@ -2,6 +2,7 @@
 
 import { X, Plus, MessageSquare } from "lucide-react"
 import type { Product, CustomizationOption } from "@/lib/supabase-menu"
+import { getEffectivePrice, getActiveDiscountPct } from "@/lib/supabase-menu"
 
 interface CustomizeModalProps {
   product: Product
@@ -38,7 +39,9 @@ export function CustomizeModal({
   unitChoices,
   setUnitChoices,
 }: CustomizeModalProps) {
-  const total = product.price + (protein?.price || 0) + (wrapper?.price || 0)
+  const total = getEffectivePrice(product) + (protein?.price || 0) + (wrapper?.price || 0)
+  const discountPct = getActiveDiscountPct(product)
+  const basePrice = getEffectivePrice(product)
 
   return (
     <div
@@ -210,9 +213,15 @@ export function CustomizeModal({
             <span className="text-sm text-muted-foreground">Total</span>
             <div className="text-right">
               <span className="text-xl font-black text-foreground">${total.toLocaleString("es-CL")}</span>
+              {discountPct !== null && (
+                <p className="text-[10px] text-muted-foreground">
+                  <span className="line-through">${product.price.toLocaleString("es-CL")}</span>{" "}
+                  <span className="text-red-500">-{discountPct}%</span>
+                </p>
+              )}
               {((protein?.price || 0) + (wrapper?.price || 0)) > 0 && (
                 <p className="text-[10px] text-muted-foreground">
-                  Base ${product.price.toLocaleString("es-CL")} + extras ${((protein?.price || 0) + (wrapper?.price || 0)).toLocaleString("es-CL")}
+                  Base ${basePrice.toLocaleString("es-CL")} + extras ${((protein?.price || 0) + (wrapper?.price || 0)).toLocaleString("es-CL")}
                 </p>
               )}
             </div>

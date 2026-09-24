@@ -16,6 +16,9 @@ export interface MenuItem {
   per_unit_choice?: boolean
   choice_count?: number | null
   created_at?: string
+  originalPrice?: number
+  discountPct?: number | null
+  discountEnd?: string | null
 }
 
 export interface CartItem extends MenuItem {

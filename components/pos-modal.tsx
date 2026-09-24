@@ -24,7 +24,7 @@ import {
   MessageSquare,
 } from "lucide-react"
 import Image from "next/image"
-import { getAvailableProducts, getCategories, type Product, type Category, type CustomizationOption } from "@/lib/supabase-menu"
+import { getAvailableProducts, getCategories, getEffectivePrice, getActiveDiscountPct, type Product, type Category, type CustomizationOption } from "@/lib/supabase-menu"
 import { addOrder, type AddOrderData, type PaymentMethod, type DeliveryType } from "@/lib/supabase-orders"
 import { getAllConfig } from "@/lib/supabase-config"
 import { optimizeCloudinaryUrl } from "@/lib/cloudinary"
@@ -190,7 +190,7 @@ export function POSModal({ open, onClose, onOrderCreated, initialClientName, ini
     setCart((prev) => {
       const existing = prev.find((i) => (i.cartKey || i.id) === key)
       if (existing) return prev.map((i) => (i.cartKey || i.id) === key ? { ...i, quantity: i.quantity + 1, notes: notes || i.notes } : i)
-      return [...prev, { id: customizeProduct.id, name: customizeProduct.name, price: customizeProduct.price, image: customizeProduct.image, category: catName, quantity: 1, cartKey: key, selectedProtein: customProtein, selectedWrapper: customWrapper, notes }]
+      return [...prev, { id: customizeProduct.id, name: customizeProduct.name, price: getEffectivePrice(customizeProduct), image: customizeProduct.image, category: catName, quantity: 1, cartKey: key, selectedProtein: customProtein, selectedWrapper: customWrapper, notes }]
     })
     setCustomizeProduct(null)
     setDetailProduct(null)
@@ -215,7 +215,7 @@ export function POSModal({ open, onClose, onOrderCreated, initialClientName, ini
     setCart((prev) => [...prev, {
       id: buildProduct.id,
       name: buildProduct.name,
-      price: buildProduct.price,
+      price: getEffectivePrice(buildProduct),
       image: buildProduct.image,
       category: catName,
       quantity: 1,
@@ -236,7 +236,7 @@ export function POSModal({ open, onClose, onOrderCreated, initialClientName, ini
       const existing = prev.find((i) => i.id === product.id)
       if (existing) return prev.map((i) => i.id === product.id ? { ...i, quantity: i.quantity + 1 } : i)
       const catName = getCategoryName(product.category)
-      return [...prev, { id: product.id, name: product.name, price: product.price, image: product.image, category: catName, quantity: 1 }]
+      return [...prev, { id: product.id, name: product.name, price: getEffectivePrice(product), image: product.image, category: catName, quantity: 1 }]
     })
   }
 
@@ -391,6 +391,11 @@ export function POSModal({ open, onClose, onOrderCreated, initialClientName, ini
                           sizes="(max-width: 640px) 50vw, 33vw"
                           loading="lazy"
                         />
+                        {getActiveDiscountPct(product) !== null && (
+                          <div className="absolute bottom-1.5 left-1.5 flex items-center rounded-full bg-red-500 px-1.5 py-0.5 text-[9px] font-black text-white shadow">
+                            -{getActiveDiscountPct(product)}%
+                          </div>
+                        )}
                         {qty > 0 && (
                           <div className="absolute top-1.5 right-1.5 flex h-6 min-w-[24px] items-center justify-center rounded-full bg-primary px-1.5 text-[11px] font-black text-primary-foreground shadow">
                             {qty}
@@ -403,7 +408,14 @@ export function POSModal({ open, onClose, onOrderCreated, initialClientName, ini
                           <p className="text-[10px] text-muted-foreground line-clamp-2 leading-snug mt-0.5">{product.description}</p>
                         )}
                         <div className="flex items-center justify-between mt-0.5">
-                          <p className="text-xs font-bold text-primary">$ {product.price.toLocaleString("es-CL")}</p>
+                          {getActiveDiscountPct(product) !== null ? (
+                            <div className="flex items-baseline gap-1">
+                              <span className="text-[10px] text-muted-foreground line-through">${product.price.toLocaleString("es-CL")}</span>
+                              <p className="text-xs font-bold text-red-500">${getEffectivePrice(product).toLocaleString("es-CL")}</p>
+                            </div>
+                          ) : (
+                            <p className="text-xs font-bold text-primary">$ {product.price.toLocaleString("es-CL")}</p>
+                          )}
                           {product.allow_custom_build && (
                             <span
                               onClick={(e) => { e.stopPropagation(); openBuildCustom(product) }}
@@ -876,11 +888,17 @@ export function POSModal({ open, onClose, onOrderCreated, initialClientName, ini
                 <span className="text-sm" style={{ color: "var(--muted-foreground)" }}>Total</span>
                 <div className="text-right">
                   <span className="text-xl font-black" style={{ color: "var(--foreground)" }}>
-                    $ {(customizeProduct.price + (customProtein?.price || 0) + (customWrapper?.price || 0)).toLocaleString("es-CL")}
+                    $ {(getEffectivePrice(customizeProduct) + (customProtein?.price || 0) + (customWrapper?.price || 0)).toLocaleString("es-CL")}
                   </span>
+                  {getActiveDiscountPct(customizeProduct) !== null && (
+                    <p className="text-[10px]" style={{ color: "var(--muted-foreground)" }}>
+                      <span className="line-through">${customizeProduct.price.toLocaleString("es-CL")}</span>{" "}
+                      <span className="text-red-500">-{getActiveDiscountPct(customizeProduct)}%</span>
+                    </p>
+                  )}
                   {((customProtein?.price || 0) + (customWrapper?.price || 0)) > 0 && (
                     <p className="text-[10px]" style={{ color: "var(--muted-foreground)" }}>
-                      Base ${customizeProduct.price.toLocaleString("es-CL")} + extras ${((customProtein?.price || 0) + (customWrapper?.price || 0)).toLocaleString("es-CL")}
+                      Base ${getEffectivePrice(customizeProduct).toLocaleString("es-CL")} + extras ${((customProtein?.price || 0) + (customWrapper?.price || 0)).toLocaleString("es-CL")}
                     </p>
                   )}
                 </div>
@@ -919,7 +937,7 @@ export function POSModal({ open, onClose, onOrderCreated, initialClientName, ini
                 </button>
               </div>
               <p className="text-[11px] text-muted-foreground">
-                Base: <span className="font-semibold text-card-foreground">{buildProduct.name}</span> · Ref. ${buildProduct.price.toLocaleString("es-CL")}
+                Base: <span className="font-semibold text-card-foreground">{buildProduct.name}</span> · Ref. ${getEffectivePrice(buildProduct).toLocaleString("es-CL")}
               </p>
               <div className="mt-2 rounded-lg px-3 py-2 bg-amber-500/5 border border-amber-500/20">
                 <p className="text-[10px] text-amber-600 dark:text-amber-400 font-medium">
@@ -990,7 +1008,14 @@ export function POSModal({ open, onClose, onOrderCreated, initialClientName, ini
               {detailProduct.description && (
                 <p className="text-sm mt-1.5 leading-relaxed" style={{ color: "var(--muted-foreground)" }}>{detailProduct.description}</p>
               )}
-              <p className="text-lg font-black mt-3" style={{ color: "var(--primary)" }}>$ {detailProduct.price.toLocaleString("es-CL")}</p>
+              {getActiveDiscountPct(detailProduct) !== null ? (
+                <div className="mt-3">
+                  <span className="text-sm font-medium line-through" style={{ color: "var(--muted-foreground)" }}>$ {detailProduct.price.toLocaleString("es-CL")}</span>
+                  <span className="text-lg font-black ml-2" style={{ color: "var(--primary)" }}>$ {getEffectivePrice(detailProduct).toLocaleString("es-CL")}</span>
+                </div>
+              ) : (
+                <p className="text-lg font-black mt-3" style={{ color: "var(--primary)" }}>$ {detailProduct.price.toLocaleString("es-CL")}</p>
+              )}
               <div className="flex items-center gap-2 mt-4">
                 {getCartQty(detailProduct.id) > 0 ? (
                   <div className="flex items-center gap-3 flex-1">

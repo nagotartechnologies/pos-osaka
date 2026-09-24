@@ -24,6 +24,9 @@ export interface Product {
   allow_custom_build?: boolean
   per_unit_choice?: boolean
   choice_count?: number | null
+  discount_pct?: number | null
+  discount_start?: string | null
+  discount_end?: string | null
 }
 
 export interface Category {
@@ -53,6 +56,47 @@ export function sortNewFirst<T>(items: T[], getCreatedAt: (item: T) => string | 
     }
     return 0
   })
+}
+
+// ─── Descuentos por tiempo limitado ───
+
+export type DiscountStatus = "active" | "scheduled" | "expired" | null
+
+type DiscountFields = Pick<Product, "discount_pct" | "discount_start" | "discount_end">
+
+// Normaliza el porcentaje: Postgres numeric puede llegar como string.
+function normalizePct(pct: unknown): number | null {
+  const n = Number(pct)
+  if (!Number.isFinite(n) || n <= 0 || n >= 100) return null
+  return n
+}
+
+export function getDiscountStatus(p: DiscountFields, now = Date.now()): DiscountStatus {
+  const pct = normalizePct(p.discount_pct)
+  if (pct === null) return null
+  if (!p.discount_start || !p.discount_end) return null
+  const start = new Date(p.discount_start).getTime()
+  const end = new Date(p.discount_end).getTime()
+  if (Number.isNaN(start) || Number.isNaN(end) || end <= start) return null
+  if (now < start) return "scheduled"
+  if (now >= end) return "expired"
+  return "active"
+}
+
+export function getActiveDiscountPct(p: DiscountFields, now = Date.now()): number | null {
+  const status = getDiscountStatus(p, now)
+  if (status !== "active") return null
+  return normalizePct(p.discount_pct)
+}
+
+export function getEffectivePrice(
+  p: Pick<Product, "price" | "discount_pct" | "discount_start" | "discount_end">,
+  now = Date.now()
+): number {
+  const base = Number(p.price)
+  const pct = getActiveDiscountPct(p, now)
+  if (pct === null) return base
+  return Math.round((base * (100 - pct)) / 100)
 }
 
 // ─── Productos ───
@@ -122,6 +166,25 @@ export async function batchUpdateCustomization(
       .eq("id", id)
     if (error) { console.error("batchUpdateCustomization error:", error); return false }
   }
+  return true
+}
+
+export async function batchUpdateDiscount(
+  ids: string[],
+  pct: number | null,
+  start: string | null,
+  end: string | null
+): Promise<boolean> {
+  if (ids.length === 0) return true
+  const updates: Record<string, number | string | null> =
+    pct === null
+      ? { discount_pct: null, discount_start: null, discount_end: null }
+      : { discount_pct: pct, discount_start: start, discount_end: end }
+  const { error } = await supabase
+    .from("products")
+    .update(updates)
+    .in("id", ids)
+  if (error) { console.error("batchUpdateDiscount error:", error); return false }
   return true
 }
 

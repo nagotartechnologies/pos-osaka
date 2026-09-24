@@ -2,7 +2,7 @@
 
 import Image from "next/image"
 import { optimizeCloudinaryUrl } from "@/lib/cloudinary"
-import { isNewProduct, type Product } from "@/lib/supabase-menu"
+import { isNewProduct, getActiveDiscountPct, getEffectivePrice, type Product } from "@/lib/supabase-menu"
 
 interface ProductCardProps {
   product: Product
@@ -12,6 +12,7 @@ interface ProductCardProps {
 }
 
 export function ProductCard({ product, qty, onAdd, onBuildCustom }: ProductCardProps) {
+  const discountPct = getActiveDiscountPct(product)
   return (
     <button
       className={`relative rounded-xl border bg-card overflow-hidden text-left transition-all active:scale-[0.97] ${
@@ -37,6 +38,11 @@ export function ProductCard({ product, qty, onAdd, onBuildCustom }: ProductCardP
             Nuevo
           </div>
         )}
+        {discountPct !== null && (
+          <div className="absolute bottom-1.5 left-1.5 flex items-center rounded-full bg-red-500 px-1.5 py-0.5 text-[9px] font-black text-white shadow">
+            -{discountPct}%
+          </div>
+        )}
         {qty > 0 && (
           <div className="absolute top-1.5 right-1.5 flex h-6 min-w-[24px] items-center justify-center rounded-full bg-primary px-1.5 text-[11px] font-black text-primary-foreground shadow">
             {qty}
@@ -49,7 +55,14 @@ export function ProductCard({ product, qty, onAdd, onBuildCustom }: ProductCardP
           <p className="text-[10px] text-muted-foreground line-clamp-1 leading-snug mt-0.5">{product.description}</p>
         )}
         <div className="flex items-center justify-between mt-0.5">
-          <p className="text-xs font-bold text-primary">$ {product.price.toLocaleString("es-CL")}</p>
+          {discountPct !== null ? (
+            <div className="flex items-baseline gap-1">
+              <span className="text-[10px] text-muted-foreground line-through">${product.price.toLocaleString("es-CL")}</span>
+              <p className="text-xs font-bold text-red-500">${getEffectivePrice(product).toLocaleString("es-CL")}</p>
+            </div>
+          ) : (
+            <p className="text-xs font-bold text-primary">$ {product.price.toLocaleString("es-CL")}</p>
+          )}
           {product.allow_custom_build && (
             <span
               onClick={(e) => { e.stopPropagation(); onBuildCustom(product) }}

@@ -9,7 +9,7 @@ import { getAllConfig, getConfigValue } from "@/lib/supabase-config"
 import { addOrder } from "@/lib/supabase-orders"
 import { isDebitDeliveryBlocked } from "@/lib/debit-limit"
 import { uploadImage, isCloudinaryConfigured, optimizeCloudinaryUrl } from "@/lib/cloudinary"
-import { getAvailableProducts, getCategories as getDbCategories, isNewProduct, sortNewFirst } from "@/lib/supabase-menu"
+import { getAvailableProducts, getCategories as getDbCategories, isNewProduct, sortNewFirst, getEffectivePrice, getActiveDiscountPct, type Product } from "@/lib/supabase-menu"
 import { parseSchedule, checkStoreOpen, DAY_KEYS, DAY_LABELS, type WeekSchedule } from "@/lib/schedule"
 import { MapPin, Clock, Star, Sparkles, Minus, Plus, ShoppingBag, X, Trash2, ChevronLeft, ChevronRight, Truck, Store, Banknote, CreditCard, ArrowRightLeft, CheckCircle2, User, Phone, MessageSquare, Upload, Loader2, ImageIcon, Palette, Beef, Droplets } from "lucide-react"
 
@@ -108,6 +108,8 @@ export default function CartaPage() {
   const [deliveryFee, setDeliveryFee] = useState(0)
 
   const [menuItems, setMenuItems] = useState<MenuItem[]>([])
+  const [rawProducts, setRawProducts] = useState<Product[]>([])
+  const [now, setNow] = useState(() => Date.now())
   const [categories, setCategories] = useState<{ id: string; name: string }[]>([{ id: "all", name: "Todo" }])
   const [menuLoading, setMenuLoading] = useState(true)
   const [storeClosed, setStoreClosed] = useState(false)
@@ -175,7 +177,7 @@ export default function CartaPage() {
 
       // Cargar productos y categorías
       const [prods, cats] = await Promise.all([getAvailableProducts(), getDbCategories()])
-      setMenuItems(sortNewFirst(prods.map((p) => ({ id: p.id, name: p.name, price: Number(p.price), image: p.image, category: p.category, description: p.description || "", protein_options: p.protein_options || null, wrapper_options: p.wrapper_options || null, allow_custom_build: p.allow_custom_build || false, per_unit_choice: p.per_unit_choice || false, choice_count: p.choice_count || null, created_at: p.created_at })), (i) => i.created_at))
+      setRawProducts(sortNewFirst(prods, (p) => p.created_at))
       if (cats.length > 0) {
         setCategories([{ id: "all", name: "Todo" }, ...cats.map((c) => ({ id: c.id, name: c.name }))])
       }
@@ -187,12 +189,71 @@ export default function CartaPage() {
     return () => clearTimeout(t)
   }, [authorized])
 
+  // Refrescar `now` cada 60s para que los descuentos se activen/desactiven solos
+  useEffect(() => {
+    const interval = setInterval(() => setNow(Date.now()), 60 * 1000)
+    return () => clearInterval(interval)
+  }, [])
+
+  // Derivar menuItems desde rawProducts aplicando descuentos vigentes
+  useEffect(() => {
+    setMenuItems(rawProducts.map((p) => {
+      const base = {
+        id: p.id,
+        name: p.name,
+        price: Number(p.price),
+        image: p.image,
+        category: p.category,
+        description: p.description || "",
+        protein_options: p.protein_options || null,
+        wrapper_options: p.wrapper_options || null,
+        allow_custom_build: p.allow_custom_build || false,
+        per_unit_choice: p.per_unit_choice || false,
+        choice_count: p.choice_count || null,
+        created_at: p.created_at,
+      }
+      const pct = getActiveDiscountPct(p, now)
+      if (pct === null) {
+        return { ...base, originalPrice: undefined, discountPct: null, discountEnd: null }
+      }
+      return {
+        ...base,
+        price: getEffectivePrice(p, now),
+        originalPrice: Number(p.price),
+        discountPct: pct,
+        discountEnd: p.discount_end ?? null,
+      }
+    }))
+  }, [rawProducts, now])
+
+  // Sincronizar carrito: si un descuento vence con la carta abierta, el total
+  // que se envía debe ser el correcto. Actualiza precio/originalPrice/discountPct
+  // de los cart items cuyo id coincida con un menuItem y cuyo precio difiera.
+  useEffect(() => {
+    setCart((prev) => {
+      if (prev.length === 0) return prev
+      const byId = new Map(menuItems.map((m) => [m.id, m]))
+      let changed = false
+      const next = prev.map((c) => {
+        const m = byId.get(c.id)
+        if (!m) return c // salsas y items custom no están en menuItems
+        if (m.price !== c.price || (m.originalPrice ?? null) !== (c.originalPrice ?? null) || (m.discountPct ?? null) !== (c.discountPct ?? null)) {
+          changed = true
+          return { ...c, price: m.price, originalPrice: m.originalPrice, discountPct: m.discountPct }
+        }
+        return c
+      })
+      return changed ? next : prev
+    })
+  }, [menuItems])
+
   const filteredItems = useMemo(() => {
     if (activeCategory === "all") return menuItems
     return menuItems.filter((item) => item.category === activeCategory)
   }, [activeCategory, menuItems])
 
   const newItems = useMemo(() => menuItems.filter((i) => isNewProduct(i.created_at)), [menuItems])
+  const offerItems = useMemo(() => menuItems.filter((i) => i.discountPct), [menuItems])
 
   useEffect(() => {
     if (checkoutStep === 3) isDebitDeliveryBlocked().then(setDebitBlocked).catch(() => {})
@@ -719,6 +780,18 @@ export default function CartaPage() {
               </div>
             </div>
           )}
+          {offerItems.length > 0 && (
+            <div className="mb-6">
+              <h2 className="text-[13px] font-bold uppercase tracking-wide mb-3 px-1 flex items-center gap-1.5" style={{ color: "#c1272d" }}>
+                🏷️ Ofertas
+              </h2>
+              <div className="space-y-2.5">
+                {offerItems.map((item) => (
+                  <MenuCard key={`offer-${item.id}`} item={item} qty={getItemQty(item.id)} onAdd={addToCart} onRemove={removeFromCart} onImageClick={setDetailItem} onBuildCustom={openBuildCustom} />
+                ))}
+              </div>
+            </div>
+          )}
           {categories.filter((c) => c.id !== "all").map((cat) => {
             const catItems = menuItems.filter((i) => i.category === cat.id)
             if (catItems.length === 0) return null
@@ -790,7 +863,14 @@ export default function CartaPage() {
               {detailItem.description && (
                 <p className="text-sm mt-1.5 leading-relaxed" style={{ color: "#8c7e6a" }}>{detailItem.description}</p>
               )}
-              <p className="text-lg font-black mt-3" style={{ color: "#c1272d" }}>$ {detailItem.price.toLocaleString("es-CL")}</p>
+              {detailItem.discountPct ? (
+                <div className="mt-3">
+                  <span className="text-sm font-medium line-through" style={{ color: "#b5a898" }}>$ {(detailItem.originalPrice ?? detailItem.price).toLocaleString("es-CL")}</span>
+                  <span className="text-lg font-black ml-2" style={{ color: "#c1272d" }}>$ {detailItem.price.toLocaleString("es-CL")}</span>
+                </div>
+              ) : (
+                <p className="text-lg font-black mt-3" style={{ color: "#c1272d" }}>$ {detailItem.price.toLocaleString("es-CL")}</p>
+              )}
               <div className="flex items-center gap-2 mt-4">
                 {getItemQty(detailItem.id) > 0 ? (
                   <div className="flex items-center gap-3 flex-1">
@@ -1007,6 +1087,12 @@ export default function CartaPage() {
                   <span className="text-xl font-black" style={{ color: "#1a1210" }}>
                     $ {(customizeItem.price + (customProtein?.price || 0) + (customWrapper?.price || 0)).toLocaleString("es-CL")}
                   </span>
+                  {customizeItem.discountPct && (
+                    <p className="text-[10px]" style={{ color: "#b5a898" }}>
+                      <span className="line-through">${(customizeItem.originalPrice ?? customizeItem.price).toLocaleString("es-CL")}</span>{" "}
+                      <span style={{ color: "#c1272d" }}>-{customizeItem.discountPct}%</span>
+                    </p>
+                  )}
                   {((customProtein?.price || 0) + (customWrapper?.price || 0)) > 0 && (
                     <p className="text-[10px]" style={{ color: "#8c7e6a" }}>
                       Base ${customizeItem.price.toLocaleString("es-CL")} + extras ${((customProtein?.price || 0) + (customWrapper?.price || 0)).toLocaleString("es-CL")}
@@ -1823,6 +1909,11 @@ function MenuCard({ item, qty, onAdd, onRemove, onImageClick, onBuildCustom }: {
             Nuevo
           </div>
         )}
+        {item.discountPct && (
+          <div className="absolute bottom-1 left-1 flex items-center rounded-full px-1.5 py-0.5 text-[9px] font-black text-white shadow-sm" style={{ background: "#c1272d" }}>
+            -{item.discountPct}%
+          </div>
+        )}
         {qty > 0 && (
           <div className="absolute top-1 right-1 flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-black text-white" style={{ background: "#c1272d" }}>
             {qty}
@@ -1840,7 +1931,19 @@ function MenuCard({ item, qty, onAdd, onRemove, onImageClick, onBuildCustom }: {
           {item.description && (
             <p className="text-[11px] leading-snug mt-0.5 line-clamp-2" style={{ color: "#8c7e6a" }}>{item.description}</p>
           )}
-          <p className="text-[15px] font-bold mt-1" style={{ color: "#c1272d" }}>$ {item.price.toLocaleString("es-CL")}</p>
+          {item.discountPct ? (
+            <div className="mt-1">
+              <span className="text-[11px] font-medium line-through" style={{ color: "#b5a898" }}>$ {(item.originalPrice ?? item.price).toLocaleString("es-CL")}</span>
+              <span className="text-[15px] font-bold ml-1.5" style={{ color: "#c1272d" }}>$ {item.price.toLocaleString("es-CL")}</span>
+              {item.discountEnd && (
+                <p className="text-[9px] mt-0.5" style={{ color: "#c1272d" }}>
+                  Oferta hasta {new Date(item.discountEnd).toLocaleDateString("es-CL", { day: "2-digit", month: "2-digit" })} {new Date(item.discountEnd).toLocaleTimeString("es-CL", { hour: "2-digit", minute: "2-digit" })}
+                </p>
+              )}
+            </div>
+          ) : (
+            <p className="text-[15px] font-bold mt-1" style={{ color: "#c1272d" }}>$ {item.price.toLocaleString("es-CL")}</p>
+          )}
         </div>
 
         {/* Controles */}

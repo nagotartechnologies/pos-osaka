@@ -2,6 +2,7 @@
 
 import { X, MessageSquare } from "lucide-react"
 import type { Product } from "@/lib/supabase-menu"
+import { getEffectivePrice } from "@/lib/supabase-menu"
 
 interface BuildCustomModalProps {
   product: Product
@@ -34,7 +35,7 @@ export function BuildCustomModal({ product, notes, setNotes, triedConfirm, onCon
             </button>
           </div>
           <p className="text-[11px] text-muted-foreground">
-            Base: <span className="font-semibold text-card-foreground">{product.name}</span> · Ref. ${product.price.toLocaleString("es-CL")}
+            Base: <span className="font-semibold text-card-foreground">{product.name}</span> · Ref. ${getEffectivePrice(product).toLocaleString("es-CL")}
           </p>
           <div className="mt-2 rounded-lg px-3 py-2 bg-amber-500/5 border border-amber-500/20">
             <p className="text-[10px] text-amber-600 dark:text-amber-400 font-medium">

@@ -21,7 +21,7 @@ import {
   MapPin,
 } from "lucide-react"
 import Image from "next/image"
-import { getAvailableProducts, getCategories, type Product, type Category } from "@/lib/supabase-menu"
+import { getAvailableProducts, getCategories, getEffectivePrice, getActiveDiscountPct, type Product, type Category } from "@/lib/supabase-menu"
 import { getAllConfig } from "@/lib/supabase-config"
 import {
   updateOrderItems,
@@ -175,7 +175,7 @@ export function EditOrderModal({ open, order, onClose, onOrderUpdated }: EditOrd
       const existing = prev.find((i) => i.id === product.id)
       if (existing) return prev.map((i) => i.id === product.id ? { ...i, quantity: i.quantity + 1 } : i)
       const catName = getCategoryName(product.category)
-      return [...prev, { id: product.id, name: product.name, price: product.price, image: product.image, category: catName, quantity: 1 }]
+      return [...prev, { id: product.id, name: product.name, price: getEffectivePrice(product), image: product.image, category: catName, quantity: 1 }]
     })
   }
 
@@ -467,7 +467,14 @@ export function EditOrderModal({ open, order, onClose, onOrderUpdated }: EditOrd
                       </div>
                       <div className="p-2.5" onClick={() => addToCart(product)}>
                         <p className="text-xs font-semibold text-card-foreground truncate">{product.name}</p>
-                        <p className="text-xs font-bold text-primary mt-0.5">$ {product.price.toLocaleString("es-CL")}</p>
+                        {getActiveDiscountPct(product) !== null ? (
+                          <div className="flex items-baseline gap-1 mt-0.5">
+                            <span className="text-[10px] text-muted-foreground line-through">${product.price.toLocaleString("es-CL")}</span>
+                            <p className="text-xs font-bold text-red-500">${getEffectivePrice(product).toLocaleString("es-CL")}</p>
+                          </div>
+                        ) : (
+                          <p className="text-xs font-bold text-primary mt-0.5">$ {product.price.toLocaleString("es-CL")}</p>
+                        )}
                       </div>
                     </button>
                   )
@@ -919,7 +926,14 @@ export function EditOrderModal({ open, order, onClose, onOrderUpdated }: EditOrd
               {detailProduct.description && (
                 <p className="text-sm mt-1.5 leading-relaxed" style={{ color: "var(--muted-foreground)" }}>{detailProduct.description}</p>
               )}
-              <p className="text-lg font-black mt-3" style={{ color: "var(--primary)" }}>$ {detailProduct.price.toLocaleString("es-CL")}</p>
+              {getActiveDiscountPct(detailProduct) !== null ? (
+                <div className="mt-3">
+                  <span className="text-sm font-medium line-through" style={{ color: "var(--muted-foreground)" }}>$ {detailProduct.price.toLocaleString("es-CL")}</span>
+                  <span className="text-lg font-black ml-2" style={{ color: "var(--primary)" }}>$ {getEffectivePrice(detailProduct).toLocaleString("es-CL")}</span>
+                </div>
+              ) : (
+                <p className="text-lg font-black mt-3" style={{ color: "var(--primary)" }}>$ {detailProduct.price.toLocaleString("es-CL")}</p>
+              )}
               <div className="flex items-center gap-2 mt-4">
                 {getCartQty(detailProduct.id) > 0 ? (
                   <div className="flex items-center gap-3 flex-1">

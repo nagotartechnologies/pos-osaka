@@ -139,7 +139,10 @@ CREATE TABLE public.products (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     protein_options jsonb,
     wrapper_options jsonb,
-    allow_custom_build boolean DEFAULT false
+    allow_custom_build boolean DEFAULT false,
+    discount_pct numeric,
+    discount_start timestamp with time zone,
+    discount_end timestamp with time zone
 );
 
 

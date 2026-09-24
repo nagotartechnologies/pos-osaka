@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useMemo, useCallback } from "react"
-import { getAvailableProducts, getCategories, type Product, type CustomizationOption } from "@/lib/supabase-menu"
+import { getAvailableProducts, getCategories, getEffectivePrice, type Product, type CustomizationOption } from "@/lib/supabase-menu"
 import { addOrder, getOrdersByDateRange, type AddOrderData, type PaymentMethod, type DeliveryType } from "@/lib/supabase-orders"
 import { getAllConfig } from "@/lib/supabase-config"
 import type { CartItem } from "@/app/pos/types"
@@ -131,7 +131,7 @@ export function usePOS() {
         const existing = prev.find((i) => i.id === product.id && !i.cartKey)
         if (existing) return prev.map((i) => i.id === product.id && !i.cartKey ? { ...i, quantity: i.quantity + 1 } : i)
         const catName = getCategoryName(product.category)
-        return [...prev, { id: product.id, name: product.name, price: product.price, image: product.image, category: catName, quantity: 1 }]
+        return [...prev, { id: product.id, name: product.name, price: getEffectivePrice(product), image: product.image, category: catName, quantity: 1 }]
       })
     },
     [getCategoryName]
@@ -208,7 +208,7 @@ export function usePOS() {
       setCart((prev) => {
         const existing = prev.find((i) => (i.cartKey || i.id) === key)
         if (existing) return prev.map((i) => (i.cartKey || i.id) === key ? { ...i, quantity: i.quantity + 1, notes: notes || i.notes } : i)
-        return [...prev, { id: customizeProduct.id, name: customizeProduct.name, price: customizeProduct.price, image: customizeProduct.image, category: catName, quantity: 1, cartKey: key, notes, unitChoices: choices }]
+        return [...prev, { id: customizeProduct.id, name: customizeProduct.name, price: getEffectivePrice(customizeProduct), image: customizeProduct.image, category: catName, quantity: 1, cartKey: key, notes, unitChoices: choices }]
       })
     } else {
       const key = makeCartKey(customizeProduct, customProtein, customWrapper)
@@ -216,7 +216,7 @@ export function usePOS() {
       setCart((prev) => {
         const existing = prev.find((i) => (i.cartKey || i.id) === key)
         if (existing) return prev.map((i) => (i.cartKey || i.id) === key ? { ...i, quantity: i.quantity + 1, notes: notes || i.notes } : i)
-        return [...prev, { id: customizeProduct.id, name: customizeProduct.name, price: customizeProduct.price, image: customizeProduct.image, category: catName, quantity: 1, cartKey: key, selectedProtein: customProtein, selectedWrapper: customWrapper, notes }]
+        return [...prev, { id: customizeProduct.id, name: customizeProduct.name, price: getEffectivePrice(customizeProduct), image: customizeProduct.image, category: catName, quantity: 1, cartKey: key, selectedProtein: customProtein, selectedWrapper: customWrapper, notes }]
       })
     }
     setCustomizeProduct(null)
@@ -242,7 +242,7 @@ export function usePOS() {
       {
         id: buildProduct.id,
         name: buildProduct.name,
-        price: buildProduct.price,
+        price: getEffectivePrice(buildProduct),
         image: buildProduct.image,
         category: catName,
         quantity: 1,
