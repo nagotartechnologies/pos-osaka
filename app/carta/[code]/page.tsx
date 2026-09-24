@@ -9,7 +9,7 @@ import { getAllConfig, getConfigValue } from "@/lib/supabase-config"
 import { addOrder } from "@/lib/supabase-orders"
 import { isDebitDeliveryBlocked } from "@/lib/debit-limit"
 import { uploadImage, isCloudinaryConfigured, optimizeCloudinaryUrl } from "@/lib/cloudinary"
-import { getAvailableProducts, getCategories as getDbCategories, isNewProduct, sortNewFirst, getEffectivePrice, getActiveDiscountPct, type Product } from "@/lib/supabase-menu"
+import { getAvailableProducts, getCategories as getDbCategories, isNewProduct, sortNewFirst, getEffectivePrice, getActiveDiscountPct, getDiscountCustomerLabel, type Product } from "@/lib/supabase-menu"
 import { parseSchedule, checkStoreOpen, DAY_KEYS, DAY_LABELS, type WeekSchedule } from "@/lib/schedule"
 import { MapPin, Clock, Star, Sparkles, Minus, Plus, ShoppingBag, X, Trash2, ChevronLeft, ChevronRight, Truck, Store, Banknote, CreditCard, ArrowRightLeft, CheckCircle2, User, Phone, MessageSquare, Upload, Loader2, ImageIcon, Palette, Beef, Droplets } from "lucide-react"
 
@@ -214,7 +214,7 @@ export default function CartaPage() {
       }
       const pct = getActiveDiscountPct(p, now)
       if (pct === null) {
-        return { ...base, originalPrice: undefined, discountPct: null, discountEnd: null }
+        return { ...base, originalPrice: undefined, discountPct: null, discountEnd: null, discountLabel: null }
       }
       return {
         ...base,
@@ -222,6 +222,7 @@ export default function CartaPage() {
         originalPrice: Number(p.price),
         discountPct: pct,
         discountEnd: p.discount_end ?? null,
+        discountLabel: getDiscountCustomerLabel(p, now),
       }
     }))
   }, [rawProducts, now])
@@ -1935,9 +1936,9 @@ function MenuCard({ item, qty, onAdd, onRemove, onImageClick, onBuildCustom }: {
             <div className="mt-1">
               <span className="text-[11px] font-medium line-through" style={{ color: "#b5a898" }}>$ {(item.originalPrice ?? item.price).toLocaleString("es-CL")}</span>
               <span className="text-[15px] font-bold ml-1.5" style={{ color: "#c1272d" }}>$ {item.price.toLocaleString("es-CL")}</span>
-              {item.discountEnd && (
+              {item.discountLabel && (
                 <p className="text-[9px] mt-0.5" style={{ color: "#c1272d" }}>
-                  Oferta hasta {new Date(item.discountEnd).toLocaleDateString("es-CL", { day: "2-digit", month: "2-digit" })} {new Date(item.discountEnd).toLocaleTimeString("es-CL", { hour: "2-digit", minute: "2-digit" })}
+                  {item.discountLabel}
                 </p>
               )}
             </div>

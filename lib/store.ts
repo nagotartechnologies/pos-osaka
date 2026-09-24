@@ -19,6 +19,7 @@ export interface MenuItem {
   originalPrice?: number
   discountPct?: number | null
   discountEnd?: string | null
+  discountLabel?: string | null
 }
 
 export interface CartItem extends MenuItem {

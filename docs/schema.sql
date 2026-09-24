@@ -28,6 +28,9 @@ CREATE TABLE public.products (
   discount_pct numeric,
   discount_start timestamp with time zone,
   discount_end timestamp with time zone,
+  discount_days smallint[],
+  discount_time_start text,
+  discount_time_end text,
   CONSTRAINT products_pkey PRIMARY KEY (id)
 );
 

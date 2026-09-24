@@ -142,7 +142,10 @@ CREATE TABLE public.products (
     allow_custom_build boolean DEFAULT false,
     discount_pct numeric,
     discount_start timestamp with time zone,
-    discount_end timestamp with time zone
+    discount_end timestamp with time zone,
+    discount_days smallint[],
+    discount_time_start text,
+    discount_time_end text
 );
 
 

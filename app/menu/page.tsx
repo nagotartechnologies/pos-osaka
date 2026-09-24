@@ -33,8 +33,13 @@ import {
   getCategories as getDbCategories, addCategory, updateCategory, deleteCategory as deleteCategoryDb,
   updateCategorySortOrders, deleteAllProducts, batchUpdateCustomization, batchUpdateCustomBuild,
   batchUpdateDiscount, getDiscountStatus, getActiveDiscountPct, getEffectivePrice,
-  seedIfEmpty, type Product, type Category as DbCategory, type CustomizationOption,
+  formatDiscountSchedule, seedIfEmpty, type Product, type Category as DbCategory, type CustomizationOption,
 } from "@/lib/supabase-menu"
+import {
+  DiscountFields, emptyDiscountForm, productToDiscountForm,
+  validateDiscountForm, formToDiscountConfig, formToDiscountColumns,
+  type DiscountForm,
+} from "@/components/discount-fields"
 
 interface MenuItemEditable extends MenuItem {
   description?: string
@@ -46,6 +51,9 @@ interface MenuItemEditable extends MenuItem {
   discount_pct?: number | null
   discount_start?: string | null
   discount_end?: string | null
+  discount_days?: number[] | null
+  discount_time_start?: string | null
+  discount_time_end?: string | null
 }
 
 interface CsvRow {
@@ -102,43 +110,9 @@ export default function MenuPage() {
     choice_count: "",
   })
 
-  // Descuento por tiempo limitado
-  const [discountPct, setDiscountPct] = useState("")
-  const [discountStart, setDiscountStart] = useState("")
-  const [discountEnd, setDiscountEnd] = useState("")
-
-  // Convierte ISO (DB) → string local YYYY-MM-DDTHH:mm (zona del navegador)
-  const isoToLocalInput = (iso?: string | null): string => {
-    if (!iso) return ""
-    const d = new Date(iso)
-    if (Number.isNaN(d.getTime())) return ""
-    const pad = (n: number) => String(n).padStart(2, "0")
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
-  }
-
-  const discountError = useMemo(() => {
-    const pct = parseFloat(discountPct)
-    const hasPct = discountPct.trim() !== "" && !Number.isNaN(pct)
-    const hasStart = discountStart !== ""
-    const hasEnd = discountEnd !== ""
-    if (!hasPct && !hasStart && !hasEnd) return null
-    if (!hasPct) return "Debes ingresar un porcentaje (1–99)."
-    if (Number.isNaN(pct) || pct <= 0 || pct >= 100) return "El porcentaje debe estar entre 1 y 99."
-    if (!hasStart || !hasEnd) return "Debes definir fecha de inicio y fin."
-    const s = new Date(discountStart).getTime()
-    const e = new Date(discountEnd).getTime()
-    if (Number.isNaN(s) || Number.isNaN(e)) return "Las fechas no son válidas."
-    if (e <= s) return "La fecha de fin debe ser mayor a la de inicio."
-    return null
-  }, [discountPct, discountStart, discountEnd])
-
-  const discountPreviewPct = useMemo(() => {
-    const pct = parseFloat(discountPct)
-    if (Number.isNaN(pct) || pct <= 0 || pct >= 100) return null
-    if (!discountStart || !discountEnd) return null
-    if (new Date(discountEnd).getTime() <= new Date(discountStart).getTime()) return null
-    return pct
-  }, [discountPct, discountStart, discountEnd])
+  // Descuento por tiempo limitado (modal de producto)
+  const [discountForm, setDiscountForm] = useState<DiscountForm>(emptyDiscountForm)
+  const discountError = useMemo(() => validateDiscountForm(discountForm), [discountForm])
 
   // Opciones de personalización
   const [proteinOptions, setProteinOptions] = useState<CustomizationOption[]>([])
@@ -152,33 +126,15 @@ export default function MenuPage() {
   // Descuentos masivos
   const [showDiscountModal, setShowDiscountModal] = useState(false)
   const [discountTargetIds, setDiscountTargetIds] = useState<Set<string>>(new Set())
-  const [bulkDiscountPct, setBulkDiscountPct] = useState("")
-  const [bulkDiscountStart, setBulkDiscountStart] = useState("")
-  const [bulkDiscountEnd, setBulkDiscountEnd] = useState("")
+  const [bulkDiscountForm, setBulkDiscountForm] = useState<DiscountForm>(emptyDiscountForm)
   const [applyingBulkDiscount, setApplyingBulkDiscount] = useState(false)
   const [bulkDiscountMsg, setBulkDiscountMsg] = useState<{ ok: boolean; text: string } | null>(null)
 
-  const bulkDiscountError = useMemo(() => {
-    const pct = parseFloat(bulkDiscountPct)
-    const hasPct = bulkDiscountPct.trim() !== "" && !Number.isNaN(pct)
-    const hasStart = bulkDiscountStart !== ""
-    const hasEnd = bulkDiscountEnd !== ""
-    if (!hasPct && !hasStart && !hasEnd) return null
-    if (!hasPct) return "Debes ingresar un porcentaje (1–99)."
-    if (Number.isNaN(pct) || pct <= 0 || pct >= 100) return "El porcentaje debe estar entre 1 y 99."
-    if (!hasStart || !hasEnd) return "Debes definir fecha de inicio y fin."
-    const s = new Date(bulkDiscountStart).getTime()
-    const e = new Date(bulkDiscountEnd).getTime()
-    if (Number.isNaN(s) || Number.isNaN(e)) return "Las fechas no son válidas."
-    if (e <= s) return "La fecha de fin debe ser mayor a la de inicio."
-    return null
-  }, [bulkDiscountPct, bulkDiscountStart, bulkDiscountEnd])
+  const bulkDiscountError = useMemo(() => validateDiscountForm(bulkDiscountForm), [bulkDiscountForm])
 
   const openBulkDiscountModal = () => {
     setDiscountTargetIds(new Set())
-    setBulkDiscountPct("")
-    setBulkDiscountStart("")
-    setBulkDiscountEnd("")
+    setBulkDiscountForm(emptyDiscountForm)
     setBulkDiscountMsg(null)
     setShowDiscountModal(true)
   }
@@ -209,26 +165,18 @@ export default function MenuPage() {
     setApplyingBulkDiscount(true)
     setBulkDiscountMsg(null)
     const ids = Array.from(discountTargetIds)
-    let pct: number | null = null
-    let start: string | null = null
-    let end: string | null = null
-    if (!clear) {
-      pct = parseFloat(bulkDiscountPct)
-      start = new Date(bulkDiscountStart).toISOString()
-      end = new Date(bulkDiscountEnd).toISOString()
-    }
-    const ok = await batchUpdateDiscount(ids, pct, start, end)
+    const config = clear ? null : formToDiscountConfig(bulkDiscountForm)
+    const ok = await batchUpdateDiscount(ids, config)
     if (ok) {
+      const cols = clear
+        ? { discount_pct: null, discount_start: null, discount_end: null, discount_days: null, discount_time_start: null, discount_time_end: null }
+        : formToDiscountColumns(bulkDiscountForm)
       setItems(prev => prev.map((item) =>
-        discountTargetIds.has(item.id)
-          ? { ...item, discount_pct: pct, discount_start: start, discount_end: end }
-          : item
+        discountTargetIds.has(item.id) ? { ...item, ...cols } : item
       ))
       setBulkDiscountMsg({ ok: true, text: clear ? "Descuento quitado de los productos seleccionados." : `Descuento aplicado a ${ids.length} producto${ids.length !== 1 ? "s" : ""}.` })
       setDiscountTargetIds(new Set())
-      setBulkDiscountPct("")
-      setBulkDiscountStart("")
-      setBulkDiscountEnd("")
+      setBulkDiscountForm(emptyDiscountForm)
     } else {
       setBulkDiscountMsg({ ok: false, text: "No se pudo actualizar el descuento. Revisa tu conexión e inténtalo de nuevo." })
     }
@@ -263,6 +211,9 @@ export default function MenuPage() {
         discount_pct: p.discount_pct != null ? Number(p.discount_pct) : null,
         discount_start: p.discount_start || null,
         discount_end: p.discount_end || null,
+        discount_days: Array.isArray(p.discount_days) ? p.discount_days.map((d) => Number(d)) : null,
+        discount_time_start: p.discount_time_start || null,
+        discount_time_end: p.discount_time_end || null,
       })))
 
       // Cargar categorías
@@ -359,9 +310,7 @@ export default function MenuPage() {
     })
     setProteinOptions([])
     setWrapperOptions([])
-    setDiscountPct("")
-    setDiscountStart("")
-    setDiscountEnd("")
+    setDiscountForm(emptyDiscountForm)
     setShowModal(true)
   }
 
@@ -380,9 +329,7 @@ export default function MenuPage() {
     })
     setProteinOptions(item.protein_options || [])
     setWrapperOptions(item.wrapper_options || [])
-    setDiscountPct(item.discount_pct != null ? String(item.discount_pct) : "")
-    setDiscountStart(isoToLocalInput(item.discount_start))
-    setDiscountEnd(isoToLocalInput(item.discount_end))
+    setDiscountForm(productToDiscountForm(item))
     setShowModal(true)
   }
 
@@ -410,19 +357,8 @@ export default function MenuPage() {
     const cleanProteins = proteinOptions.filter(o => o.name.trim())
     const cleanWrappers = wrapperOptions.filter(o => o.name.trim())
 
-    // Descuento: si todo vacío o inválido → null en las 3 columnas
-    const pctNum = parseFloat(discountPct)
-    const hasDiscount =
-      discountPct.trim() !== "" && !Number.isNaN(pctNum) && pctNum > 0 && pctNum < 100 &&
-      discountStart !== "" && discountEnd !== "" &&
-      new Date(discountEnd).getTime() > new Date(discountStart).getTime()
-    const discountFields = hasDiscount
-      ? {
-          discount_pct: pctNum,
-          discount_start: new Date(discountStart).toISOString(),
-          discount_end: new Date(discountEnd).toISOString(),
-        }
-      : { discount_pct: null, discount_start: null, discount_end: null }
+    // Descuento: formToDiscountColumns devuelve las 6 columnas (null si vacío)
+    const discountFields = formToDiscountColumns(discountForm)
 
     if (editingItem) {
       const updates: any = {
@@ -477,6 +413,9 @@ export default function MenuPage() {
           discount_pct: result.discount_pct != null ? Number(result.discount_pct) : null,
           discount_start: result.discount_start || null,
           discount_end: result.discount_end || null,
+          discount_days: Array.isArray(result.discount_days) ? result.discount_days.map((d) => Number(d)) : null,
+          discount_time_start: result.discount_time_start || null,
+          discount_time_end: result.discount_time_end || null,
         }])
       }
     }
@@ -887,6 +826,18 @@ export default function MenuPage() {
                   return (
                     <div className="absolute bottom-2 left-2 flex items-center gap-1 rounded-full bg-red-500 px-2 py-0.5 text-[10px] font-black text-white shadow-sm">
                       -{pct}%
+                    </div>
+                  )
+                }
+                if (status === "recurring") {
+                  const schedule = formatDiscountSchedule(item)
+                  const short = schedule.length > 24 ? `${schedule.slice(0, 22)}…` : schedule
+                  return (
+                    <div
+                      title={schedule}
+                      className="absolute bottom-2 left-2 flex items-center gap-1 rounded-full bg-amber-500 px-2 py-0.5 text-[10px] font-bold text-white shadow-sm max-w-[140px] truncate"
+                    >
+                      Semanal · {short}
                     </div>
                   )
                 }
@@ -1306,64 +1257,11 @@ export default function MenuPage() {
               )}
 
               {/* Descuento por tiempo limitado */}
-              <div className="rounded-xl border border-emerald-500/20 p-4 space-y-3" style={{ background: discountPct ? "rgba(16,185,129,0.05)" : undefined }}>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-card-foreground flex items-center gap-1.5">🏷️ Descuento por tiempo limitado</p>
-                    <p className="text-xs text-muted-foreground">Se activa y desactiva solo según las fechas</p>
-                  </div>
-                  {(discountPct || discountStart || discountEnd) && (
-                    <button
-                      type="button"
-                      onClick={() => { setDiscountPct(""); setDiscountStart(""); setDiscountEnd("") }}
-                      className="text-xs font-medium text-red-500 dark:text-red-400 hover:underline"
-                    >
-                      Quitar descuento
-                    </button>
-                  )}
-                </div>
-                <div className="grid grid-cols-3 gap-2">
-                  <div>
-                    <label className="text-[10px] font-medium text-muted-foreground mb-1 block">Porcentaje %</label>
-                    <input
-                      type="number"
-                      min={1}
-                      max={99}
-                      value={discountPct}
-                      onChange={(e) => setDiscountPct(e.target.value)}
-                      placeholder="Ej: 20"
-                      className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-medium text-muted-foreground mb-1 block">Inicio</label>
-                    <input
-                      type="datetime-local"
-                      value={discountStart}
-                      onChange={(e) => setDiscountStart(e.target.value)}
-                      className="w-full rounded-lg border border-border bg-background px-2 py-2 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-medium text-muted-foreground mb-1 block">Fin</label>
-                    <input
-                      type="datetime-local"
-                      value={discountEnd}
-                      onChange={(e) => setDiscountEnd(e.target.value)}
-                      className="w-full rounded-lg border border-border bg-background px-2 py-2 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
-                    />
-                  </div>
-                </div>
-                {discountError && (
-                  <p className="text-[11px] font-semibold text-red-500">{discountError}</p>
-                )}
-                {!discountError && discountPreviewPct !== null && formData.price && (
-                  <p className="text-[11px] text-emerald-600 dark:text-emerald-400">
-                    Precio con descuento: <span className="font-bold">${Math.round((parseFloat(formData.price) || 0) * (100 - discountPreviewPct) / 100).toLocaleString("es-CL")}</span>
-                    {" "}· Precio normal: ${(parseFloat(formData.price) || 0).toLocaleString("es-CL")}
-                  </p>
-                )}
-              </div>
+              <DiscountFields
+                form={discountForm}
+                setForm={setDiscountForm}
+                basePrice={parseFloat(formData.price) || 0}
+              />
             </div>
 
             {/* Upload error */}
@@ -1802,41 +1700,10 @@ export default function MenuPage() {
             </div>
 
             <div className="px-6 py-4 border-b border-border space-y-3">
-              <div className="grid grid-cols-3 gap-2">
-                <div>
-                  <label className="text-[10px] font-medium text-muted-foreground mb-1 block">Porcentaje %</label>
-                  <input
-                    type="number"
-                    min={1}
-                    max={99}
-                    value={bulkDiscountPct}
-                    onChange={(e) => setBulkDiscountPct(e.target.value)}
-                    placeholder="Ej: 20"
-                    className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
-                  />
-                </div>
-                <div>
-                  <label className="text-[10px] font-medium text-muted-foreground mb-1 block">Inicio</label>
-                  <input
-                    type="datetime-local"
-                    value={bulkDiscountStart}
-                    onChange={(e) => setBulkDiscountStart(e.target.value)}
-                    className="w-full rounded-lg border border-border bg-background px-2 py-2 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
-                  />
-                </div>
-                <div>
-                  <label className="text-[10px] font-medium text-muted-foreground mb-1 block">Fin</label>
-                  <input
-                    type="datetime-local"
-                    value={bulkDiscountEnd}
-                    onChange={(e) => setBulkDiscountEnd(e.target.value)}
-                    className="w-full rounded-lg border border-border bg-background px-2 py-2 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
-                  />
-                </div>
-              </div>
-              {bulkDiscountError && (
-                <p className="text-[11px] font-semibold text-red-500">{bulkDiscountError}</p>
-              )}
+              <DiscountFields
+                form={bulkDiscountForm}
+                setForm={setBulkDiscountForm}
+              />
               {bulkDiscountMsg && (
                 <div className={`flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium ${bulkDiscountMsg.ok ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" : "bg-red-500/10 text-red-500"}`}>
                   {bulkDiscountMsg.ok ? <CheckCircle2 className="h-3.5 w-3.5" /> : <AlertCircle className="h-3.5 w-3.5" />}
@@ -1896,6 +1763,14 @@ export default function MenuPage() {
                                 -{pct}%
                               </span>
                             )}
+                            {status === "recurring" && (
+                              <span
+                                title={formatDiscountSchedule(item)}
+                                className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-600 font-medium flex-shrink-0 max-w-[120px] truncate"
+                              >
+                                Semanal
+                              </span>
+                            )}
                             {status === "scheduled" && (
                               <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-600 font-medium flex-shrink-0">
                                 Programado
@@ -1925,7 +1800,7 @@ export default function MenuPage() {
               </button>
               <button
                 onClick={() => handleApplyBulkDiscount(false)}
-                disabled={discountTargetIds.size === 0 || applyingBulkDiscount || !!bulkDiscountError || (!bulkDiscountPct && !bulkDiscountStart && !bulkDiscountEnd)}
+                disabled={discountTargetIds.size === 0 || applyingBulkDiscount || !!bulkDiscountError || (validateDiscountForm(bulkDiscountForm) === null && formToDiscountConfig(bulkDiscountForm) === null)}
                 className="flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {applyingBulkDiscount ? <Loader2 className="h-4 w-4 animate-spin" /> : <Tag className="h-4 w-4" />}
