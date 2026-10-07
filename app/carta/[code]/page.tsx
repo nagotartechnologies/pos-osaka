@@ -9,7 +9,7 @@ import { getAllConfig, getConfigValue } from "@/lib/supabase-config"
 import { addOrder } from "@/lib/supabase-orders"
 import { isDebitDeliveryBlocked } from "@/lib/debit-limit"
 import { uploadImage, isCloudinaryConfigured, optimizeCloudinaryUrl } from "@/lib/cloudinary"
-import { getAvailableProducts, getCategories as getDbCategories, isNewProduct, sortNewFirst, getEffectivePrice, getActiveDiscountPct, getDiscountCustomerLabel, type Product } from "@/lib/supabase-menu"
+import { getAvailableProducts, getCategories as getDbCategories, isNewProduct, sortNewFirst, getEffectivePrice, getActiveDiscountPct, getDiscountCustomerLabel, setNewProductDays, type Product } from "@/lib/supabase-menu"
 import { parseSchedule, checkStoreOpen, DAY_KEYS, DAY_LABELS, type WeekSchedule } from "@/lib/schedule"
 import { MapPin, Clock, Star, Sparkles, Minus, Plus, ShoppingBag, X, Trash2, ChevronLeft, ChevronRight, Truck, Store, Banknote, CreditCard, ArrowRightLeft, CheckCircle2, User, Phone, MessageSquare, Upload, Loader2, ImageIcon, Palette, Beef, Droplets } from "lucide-react"
 
@@ -134,6 +134,7 @@ export default function CartaPage() {
     async function loadAll() {
       // Cargar config del negocio desde Supabase
       const dbConfig = await getAllConfig()
+      setNewProductDays(dbConfig.newProductDays)
       if (dbConfig.logoPublicUrl) setLogo(dbConfig.logoPublicUrl)
       else setLogo(loadLogoForTheme("dark"))
       setBusinessName(dbConfig.nombreNegocio || loadBusinessName() || "Osaka Sushi Restaurant")

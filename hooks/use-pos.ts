@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useMemo, useCallback } from "react"
-import { getAvailableProducts, getCategories, getEffectivePrice, type Product, type CustomizationOption } from "@/lib/supabase-menu"
+import { getAvailableProducts, getCategories, getEffectivePrice, setNewProductDays, type Product, type CustomizationOption } from "@/lib/supabase-menu"
 import { addOrder, getOrdersByDateRange, type AddOrderData, type PaymentMethod, type DeliveryType } from "@/lib/supabase-orders"
 import { getAllConfig } from "@/lib/supabase-config"
 import type { CartItem } from "@/app/pos/types"
@@ -53,6 +53,7 @@ export function usePOS() {
     setLoading(true)
     Promise.all([getAvailableProducts(), getCategories(), getAllConfig(), getOrdersByDateRange(7)]).then(
       ([prods, cats, cfg, recentOrders]) => {
+        setNewProductDays(cfg.newProductDays)
         setProducts(prods)
         setCategories(cats.map((c) => ({ id: c.id, name: c.name })))
         if (cfg.deliveryFee) setDeliveryFee(Number(cfg.deliveryFee) || 0)

@@ -10,6 +10,7 @@ import { extractColorsFromImage, applyPrimaryColor, resetPrimaryColor, saveColor
 import { uploadBase64Image, isCloudinaryConfigured } from "@/lib/cloudinary"
 import { parseSchedule, DAY_KEYS, DAY_LABELS, DEFAULT_SCHEDULE, type WeekSchedule, type DayKey } from "@/lib/schedule"
 import { getQuickReplies, addQuickReply, updateQuickReply, deleteQuickReply, type QuickReply } from "@/lib/supabase-quick-replies"
+import { DEFAULT_NEW_PRODUCT_DAYS } from "@/lib/supabase-menu"
 import { ConfirmModal } from "@/components/confirm-modal"
 import {
   Store,
@@ -45,6 +46,7 @@ import {
   User,
   Hash,
   Truck,
+  Sparkles,
 } from "lucide-react"
 
 interface ConfigData {
@@ -144,6 +146,7 @@ export default function ConfiguracionPage() {
   const [bankData, setBankData] = useState<BankData>({ banco: "", tipoCuenta: "", numeroCuenta: "", rut: "", titular: "" })
   const [cartaCode, setCartaCode] = useState("")
   const [deliveryFee, setDeliveryFee] = useState("")
+  const [newProductDays, setNewProductDaysInput] = useState(String(DEFAULT_NEW_PRODUCT_DAYS))
   const [deliveryZoneEnabled, setDeliveryZoneEnabled] = useState(false)
   const [deliveryZoneMsg, setDeliveryZoneMsg] = useState("")
   const [schedule, setSchedule] = useState<WeekSchedule>(DEFAULT_SCHEDULE)
@@ -199,6 +202,7 @@ export default function ConfiguracionPage() {
           try { setStatusMsgs((prev) => ({ ...prev, ...JSON.parse(dbConfig.statusMsgs) })) } catch {}
         }
         if (dbConfig.deliveryFee) setDeliveryFee(dbConfig.deliveryFee)
+        if (dbConfig.newProductDays) setNewProductDaysInput(dbConfig.newProductDays)
         setDeliveryZoneEnabled(dbConfig.deliveryZoneEnabled === "true")
         setCardPaymentsEnabled(dbConfig.cardPaymentsEnabled === "true")
         if (dbConfig.deliveryZoneMsg) setDeliveryZoneMsg(dbConfig.deliveryZoneMsg)
@@ -300,6 +304,10 @@ export default function ConfiguracionPage() {
       postVentaEnabled: String(postVentaEnabled),
       statusMsgs: JSON.stringify(statusMsgs),
       deliveryFee: deliveryFee,
+      newProductDays: (() => {
+        const n = Number(newProductDays)
+        return newProductDays !== "" && Number.isInteger(n) && n >= 0 ? newProductDays : String(DEFAULT_NEW_PRODUCT_DAYS)
+      })(),
       deliveryZoneEnabled: String(deliveryZoneEnabled),
       deliveryZoneMsg: deliveryZoneMsg,
       cardPaymentsEnabled: String(cardPaymentsEnabled),
@@ -1231,6 +1239,31 @@ export default function ConfiguracionPage() {
                     </div>
                     <p className="text-[10px] text-muted-foreground mt-1.5">
                       Deja en 0 o vacío si el delivery es gratis. Este valor se suma automáticamente al total del pedido.
+                    </p>
+                  </div>
+                </div>
+              </SectionCard>
+
+              <SectionCard title="Productos Nuevos" description={'Cantidad de días que un producto recién creado se muestra como "Nuevo" en la carta y el POS. Usa 0 para desactivar la etiqueta.'}>
+                <div className="space-y-4 max-w-md">
+                  <div>
+                    <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Días como Nuevo</label>
+                    <div className="flex items-center gap-2">
+                      <Sparkles className="h-4 w-4 text-muted-foreground" />
+                      <input
+                        type="number"
+                        min="0"
+                        max="365"
+                        step="1"
+                        value={newProductDays}
+                        onChange={(e) => setNewProductDaysInput(e.target.value)}
+                        placeholder="Ej: 5"
+                        className="w-full rounded-xl border border-border bg-background px-4 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                      />
+                      <span className="text-xs text-muted-foreground flex-shrink-0">días</span>
+                    </div>
+                    <p className="text-[10px] text-muted-foreground mt-1.5">
+                      Productos creados hace menos de esta cantidad de días aparecen con la etiqueta "Nuevo". Deja en 0 para desactivar.
                     </p>
                   </div>
                 </div>
