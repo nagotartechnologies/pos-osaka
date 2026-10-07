@@ -40,7 +40,7 @@ export interface Category {
 
 // ─── Productos nuevos ───
 
-export const NEW_PRODUCT_DAYS = 14
+export const NEW_PRODUCT_DAYS = 5
 
 export function isNewProduct(createdAt?: string | null): boolean {
   if (!createdAt) return false
