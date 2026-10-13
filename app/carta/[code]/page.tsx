@@ -116,7 +116,6 @@ export default function CartaPage() {
   const [storeSchedule, setStoreSchedule] = useState<WeekSchedule | null>(null)
   const [closedInfo, setClosedInfo] = useState<{ nextDay: string | null; nextTime: string | null }>({ nextDay: null, nextTime: null })
   const [highDemandMsg, setHighDemandMsg] = useState("")
-  const [acceptedDelay, setAcceptedDelay] = useState(false)
   const [ordersBlocked, setOrdersBlocked] = useState(false)
   const [ordersBlockedMsg, setOrdersBlockedMsg] = useState("")
   const [deliveryZoneMsg, setDeliveryZoneMsg] = useState("")
@@ -1748,21 +1747,6 @@ export default function CartaPage() {
                   <span className="text-xl font-black" style={{ color: hasCustomBuild && checkoutStep === 3 ? "#d97706" : "#1a1210" }}>$ {cartTotal.toLocaleString("es-CL")}</span>
                 </div>
 
-                {/* Aceptación de retraso por alta demanda */}
-                {highDemandMsg && checkoutStep === 3 && !acceptedDelay && (
-                  <label className="flex items-start gap-2.5 rounded-xl p-3 cursor-pointer" style={{ background: "#fef3cd", border: "1px solid #fde68a" }}>
-                    <input
-                      type="checkbox"
-                      checked={acceptedDelay}
-                      onChange={(e) => setAcceptedDelay(e.target.checked)}
-                      className="mt-0.5 h-4 w-4 rounded accent-amber-600 flex-shrink-0"
-                    />
-                    <span className="text-xs font-medium" style={{ color: "#92400e" }}>
-                      Entiendo que hay alta demanda y mi pedido podría tener un tiempo de espera mayor al habitual.
-                    </span>
-                  </label>
-                )}
-
                 {checkoutStep < 3 ? (
                   <button
                     onClick={() => {
@@ -1785,7 +1769,7 @@ export default function CartaPage() {
                 ) : hasCustomBuild ? (
                   <button
                     onClick={handleSubmitOrder}
-                    disabled={!canSubmit() || submittingOrder || !!(highDemandMsg && !acceptedDelay)}
+                    disabled={!canSubmit() || submittingOrder}
                     className="w-full flex items-center justify-center gap-2 rounded-2xl py-3.5 text-sm font-bold text-white transition-all active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed"
                     style={{ background: "#d97706" }}
                   >
@@ -1801,7 +1785,7 @@ export default function CartaPage() {
                 ) : (
                   <button
                     onClick={handleSubmitOrder}
-                    disabled={!canSubmit() || uploadingReceipt || submittingOrder || !!(highDemandMsg && !acceptedDelay)}
+                    disabled={!canSubmit() || uploadingReceipt || submittingOrder}
                     className="w-full flex items-center justify-center gap-2 rounded-2xl py-3.5 text-sm font-bold text-white transition-all active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed"
                     style={{ background: "#1a1210" }}
                   >
