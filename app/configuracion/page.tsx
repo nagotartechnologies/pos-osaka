@@ -132,6 +132,7 @@ export default function ConfiguracionPage() {
   const [pinSuccess, setPinSuccess] = useState(false)
   const [whatsapp, setWhatsapp] = useState("")
   const [whatsappAdmin, setWhatsappAdmin] = useState("")
+  const [waProvider, setWaProvider] = useState<"greenapi" | "openwa">("greenapi")
   const [autoReplyMsg, setAutoReplyMsg] = useState("")
   const [closedMsg, setClosedMsg] = useState("")
   const [postVentaMsg, setPostVentaMsg] = useState("")
@@ -194,6 +195,7 @@ export default function ConfiguracionPage() {
         }))
         if (dbConfig.whatsapp) setWhatsapp(dbConfig.whatsapp)
         if (dbConfig.whatsappAdmin) setWhatsappAdmin(dbConfig.whatsappAdmin)
+        setWaProvider(dbConfig.whatsappProvider === "openwa" ? "openwa" : "greenapi")
         if (dbConfig.autoReplyMsg) setAutoReplyMsg(dbConfig.autoReplyMsg)
         if (dbConfig.closedMsg) setClosedMsg(dbConfig.closedMsg)
         if (dbConfig.postVentaMsg) setPostVentaMsg(dbConfig.postVentaMsg)
@@ -994,6 +996,33 @@ export default function ConfiguracionPage() {
                     </p>
                   </div>
                   <div className="pt-2">
+                    <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Proveedor de WhatsApp</label>
+                    <div className="flex gap-2">
+                      {(["greenapi", "openwa"] as const).map((p) => (
+                        <button
+                          key={p}
+                          type="button"
+                          onClick={async () => {
+                            setWaProvider(p)
+                            await setConfigValue("whatsappProvider", p)
+                            setSaved(true)
+                            setTimeout(() => setSaved(false), 2500)
+                          }}
+                          className={`flex-1 rounded-xl border px-4 py-2 text-xs font-semibold transition-colors ${
+                            waProvider === p
+                              ? "bg-primary/10 border-primary/20 text-primary"
+                              : "border-border bg-background text-muted-foreground hover:bg-muted/50"
+                          }`}
+                        >
+                          {p === "greenapi" ? "Green API" : "OpenWA"}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-[10px] text-muted-foreground mt-1.5">
+                      Proveedor usado para enviar mensajes. El cambio aplica de inmediato a todo el sistema.
+                    </p>
+                  </div>
+                  <div className="pt-2">
                     <button
                       onClick={async () => {
                         setWaTestStatus("testing")
@@ -1019,7 +1048,7 @@ export default function ConfiguracionPage() {
                        waTestStatus === "ok" ? "✓ Conectado" :
                        waTestStatus === "not_configured" ? "No configurado" :
                        waTestStatus === "error" ? "✗ Sin conexión" :
-                       "Probar Conexión GreenAPI"}
+                       `Probar Conexión ${waProvider === "openwa" ? "OpenWA" : "GreenAPI"}`}
                     </button>
                   </div>
                 </div>

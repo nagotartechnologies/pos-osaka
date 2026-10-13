@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
-import { sendMessage, sendTyping, isGreenApiConfigured, formatPhone, downloadFile } from "@/lib/greenapi"
+import crypto from "crypto"
+import { sendMessage, sendTyping, isWhatsAppConfigured, downloadFile, type WhatsAppProvider } from "@/lib/whatsapp"
 import { normalizePhone, chatIdFromPhone } from "@/lib/phone"
 import { parseSchedule, checkStoreOpen, DAY_LABELS } from "@/lib/schedule"
 
@@ -8,6 +9,7 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ""
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ""
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || ""
 const WEBHOOK_TOKEN = process.env.GREENAPI_WEBHOOK_TOKEN || ""
+const OPENWA_WEBHOOK_SECRET = process.env.OPENWA_WEBHOOK_SECRET || ""
 const STORAGE_BUCKET = "media"
 
 function getServerClient() {
@@ -36,78 +38,179 @@ function extractPhone(chatId: string): string {
   return chatId.replace("@c.us", "").replace("@g.us", "")
 }
 
+// Resultado normalizado de cualquier proveedor para el flujo común
+type ParsedIncoming = {
+  phone: string
+  messageText: string
+  msgType: "text" | "image" | "audio"
+  mediaUrl: string | null
+  provider: WhatsAppProvider
+}
+
+// ── Verificar firma HMAC del webhook de OpenWA (X-OpenWA-Signature: sha256=<hex>) ──
+function verifyOpenWaSignature(rawBody: string, signature: string | null): boolean {
+  if (!OPENWA_WEBHOOK_SECRET) return true
+  if (!signature || !signature.startsWith("sha256=")) return false
+  const expected = "sha256=" + crypto.createHmac("sha256", OPENWA_WEBHOOK_SECRET).update(rawBody).digest("hex")
+  if (expected.length !== signature.length) return false
+  return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signature))
+}
+
+// ── Parsear mensaje entrante de GreenAPI ──
+async function parseGreenApi(body: any): Promise<ParsedIncoming | null> {
+  const messageData = body.messageData
+  const senderData = body.senderData
+  const chatId = senderData?.chatId || ""
+  const phone = extractPhone(chatId)
+
+  if (!phone || !messageData) return null
+
+  // Extraer texto del mensaje y detectar imágenes
+  let messageText = ""
+  let mediaUrl: string | null = null
+  let msgType: "text" | "image" | "audio" = "text"
+  const typeMessage = messageData.typeMessage
+
+  if (typeMessage === "textMessage") {
+    messageText = messageData.textMessageData?.textMessage || ""
+  } else if (typeMessage === "extendedTextMessage") {
+    messageText = messageData.extendedTextMessageData?.text || ""
+  } else if (typeMessage === "imageMessage") {
+    messageText = messageData.fileMessageData?.caption || "📷 Imagen"
+    msgType = "image"
+    // Descargar imagen de GreenAPI y subir a Cloudinary
+    const downloadUrl = messageData.fileMessageData?.downloadUrl
+    if (downloadUrl) {
+      const buffer = await downloadFile(downloadUrl)
+      if (buffer) {
+        const storedUrl = await uploadMediaToStorage(buffer, `pos-osaka/chat-media/chat-${Date.now()}.jpg`, "image/jpeg")
+        if (storedUrl) mediaUrl = storedUrl
+      }
+    }
+  } else if (typeMessage === "audioMessage") {
+    messageText = "🎤 Audio"
+    msgType = "audio"
+    const downloadUrl = messageData.fileMessageData?.downloadUrl
+    if (downloadUrl) {
+      const buffer = await downloadFile(downloadUrl)
+      if (buffer) {
+        const storedUrl = await uploadMediaToStorage(buffer, `pos-osaka/chat-media/audio-${Date.now()}.ogg`, "audio/ogg")
+        if (storedUrl) mediaUrl = storedUrl
+      }
+    }
+  } else if (typeMessage === "documentMessage" || typeMessage === "videoMessage") {
+    messageText = messageData.fileMessageData?.caption || `[${typeMessage}]`
+  } else {
+    messageText = `[${typeMessage}]`
+  }
+
+  return { phone, messageText, msgType, mediaUrl, provider: "greenapi" }
+}
+
+// ── Parsear mensaje entrante de OpenWA ──
+// data.from/data.chatId llegan como "56912345678@c.us" (u otro sufijo como "@lid");
+// nos quedamos solo con los dígitos antes de la "@".
+async function parseOpenWa(body: any): Promise<ParsedIncoming | null> {
+  const data = body.data || {}
+
+  // Ignorar mensajes propios y de grupos
+  if (data.fromMe === true || data.isGroup === true) return null
+
+  const rawChat = data.from || data.chatId || ""
+  const phone = String(rawChat).split("@")[0].replace(/\D/g, "")
+  if (!phone) return null
+
+  const bodyText = data.body || ""
+  const type = data.type || "text"
+
+  let messageText = bodyText
+  let mediaUrl: string | null = null
+  let msgType: "text" | "image" | "audio" = "text"
+
+  // Media adjunta: { mimetype, data: base64 } o { mimetype, omitted: true }
+  const media = data.media || null
+  const mediaBase64: string | null = media?.data && !media.omitted ? media.data : null
+
+  if (type === "text" || type === "chat") {
+    messageText = bodyText
+  } else if (type === "image") {
+    messageText = bodyText || "📷 Imagen"
+    msgType = "image"
+    if (mediaBase64) {
+      const buffer = Buffer.from(mediaBase64, "base64")
+      const storedUrl = await uploadMediaToStorage(buffer, `pos-osaka/chat-media/chat-${Date.now()}.jpg`, "image/jpeg")
+      if (storedUrl) mediaUrl = storedUrl
+    }
+  } else if (type === "audio" || type === "ptt") {
+    messageText = bodyText || "🎤 Audio"
+    msgType = "audio"
+    if (mediaBase64) {
+      const buffer = Buffer.from(mediaBase64, "base64")
+      const storedUrl = await uploadMediaToStorage(buffer, `pos-osaka/chat-media/audio-${Date.now()}.ogg`, "audio/ogg")
+      if (storedUrl) mediaUrl = storedUrl
+    }
+  } else if (type === "video" || type === "document") {
+    messageText = bodyText || `[${type}]`
+  } else {
+    messageText = bodyText || `[${type}]`
+  }
+
+  return { phone, messageText, msgType, mediaUrl, provider: "openwa" }
+}
+
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json()
-
-    // Verificar token de webhook si está configurado
-    if (WEBHOOK_TOKEN && body.stateInstance !== undefined) {
-      // GreenAPI envía el instanceId — verificar que coincida con nuestro token secreto
-      const token = req.headers.get("x-webhook-token") || body.webhookToken || ""
-      if (WEBHOOK_TOKEN && token && token !== WEBHOOK_TOKEN) {
-        return NextResponse.json({ error: "Token inválido" }, { status: 403 })
-      }
-    }
-
-    // GreenAPI envía diferentes tipos de webhook
-    const typeWebhook = body.typeWebhook
-
-    // Solo procesamos mensajes entrantes
-    if (typeWebhook !== "incomingMessageReceived") {
+    // Leer el cuerpo como texto crudo (necesario para verificar la firma HMAC de OpenWA)
+    const rawBody = await req.text()
+    let body: any
+    try {
+      body = JSON.parse(rawBody)
+    } catch {
       return NextResponse.json({ ok: true })
     }
 
-    const messageData = body.messageData
-    const senderData = body.senderData
-    const chatId = senderData?.chatId || ""
-    const phone = extractPhone(chatId)
+    // Detectar proveedor: OpenWA envía header x-openwa-event o un campo "event" string
+    const isOpenWa = !!req.headers.get("x-openwa-event") || typeof body.event === "string"
 
-    if (!phone || !messageData) {
-      return NextResponse.json({ ok: true })
-    }
+    let parsed: ParsedIncoming | null = null
 
-    // Extraer texto del mensaje y detectar imágenes
-    let messageText = ""
-    let mediaUrl: string | null = null
-    let msgType: "text" | "image" | "audio" = "text"
-    const typeMessage = messageData.typeMessage
-
-    if (typeMessage === "textMessage") {
-      messageText = messageData.textMessageData?.textMessage || ""
-    } else if (typeMessage === "extendedTextMessage") {
-      messageText = messageData.extendedTextMessageData?.text || ""
-    } else if (typeMessage === "imageMessage") {
-      messageText = messageData.fileMessageData?.caption || "📷 Imagen"
-      msgType = "image"
-      // Descargar imagen de GreenAPI y subir a Cloudinary
-      const downloadUrl = messageData.fileMessageData?.downloadUrl
-      if (downloadUrl) {
-        const buffer = await downloadFile(downloadUrl)
-        if (buffer) {
-          const storedUrl = await uploadMediaToStorage(buffer, `pos-osaka/chat-media/chat-${Date.now()}.jpg`, "image/jpeg")
-          if (storedUrl) mediaUrl = storedUrl
-        }
+    if (isOpenWa) {
+      if (!verifyOpenWaSignature(rawBody, req.headers.get("x-openwa-signature"))) {
+        return NextResponse.json({ error: "Firma inválida" }, { status: 401 })
       }
-    } else if (typeMessage === "audioMessage") {
-      messageText = "🎤 Audio"
-      msgType = "audio"
-      const downloadUrl = messageData.fileMessageData?.downloadUrl
-      if (downloadUrl) {
-        const buffer = await downloadFile(downloadUrl)
-        if (buffer) {
-          const storedUrl = await uploadMediaToStorage(buffer, `pos-osaka/chat-media/audio-${Date.now()}.ogg`, "audio/ogg")
-          if (storedUrl) mediaUrl = storedUrl
-        }
+
+      // Solo procesamos mensajes entrantes
+      if (body.event !== "message.received") {
+        return NextResponse.json({ ok: true })
       }
-    } else if (typeMessage === "documentMessage" || typeMessage === "videoMessage") {
-      messageText = messageData.fileMessageData?.caption || `[${typeMessage}]`
+
+      parsed = await parseOpenWa(body)
     } else {
-      messageText = `[${typeMessage}]`
+      // Verificar token de webhook si está configurado
+      if (WEBHOOK_TOKEN && body.stateInstance !== undefined) {
+        // GreenAPI envía el instanceId — verificar que coincida con nuestro token secreto
+        const token = req.headers.get("x-webhook-token") || body.webhookToken || ""
+        if (WEBHOOK_TOKEN && token && token !== WEBHOOK_TOKEN) {
+          return NextResponse.json({ error: "Token inválido" }, { status: 403 })
+        }
+      }
+
+      // GreenAPI envía diferentes tipos de webhook
+      const typeWebhook = body.typeWebhook
+
+      // Solo procesamos mensajes entrantes
+      if (typeWebhook !== "incomingMessageReceived") {
+        return NextResponse.json({ ok: true })
+      }
+
+      parsed = await parseGreenApi(body)
     }
 
-    if (!messageText) {
+    if (!parsed || !parsed.messageText) {
       return NextResponse.json({ ok: true })
     }
+
+    const { phone, messageText, msgType, mediaUrl, provider } = parsed
 
     // Buscar el pedido más reciente asociado a este teléfono
     const sb = getServerClient()
@@ -171,7 +274,10 @@ export async function POST(req: NextRequest) {
       // Cerrado si el día no fue iniciado O el schedule dice cerrado
       const isOpen = dayIsOpen && scheduleOpen
 
-      if (!isOpen && isGreenApiConfigured()) {
+      // Las respuestas automáticas salen por el mismo canal por donde llegó el mensaje
+      const waConfigured = await isWhatsAppConfigured(provider)
+
+      if (!isOpen && waConfigured) {
         // Anti-spam cerrado: 1 mensaje cada 4 horas (buscar por teléfono, no order_id)
         const since4h = new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString()
         const { data: recentClosed } = await sb
@@ -199,8 +305,8 @@ export async function POST(req: NextRequest) {
             ? cfg.closedMsg.replace(/\{negocio\}/g, bizName).replace(/\{proximoDia\}/g, proximoDiaLabel).replace(/\{proximaHora\}/g, nextOpenTime || "")
             : `🌙 Hola! En este momento *${bizName}* está cerrado.${nextInfo}\n\n¡Te esperamos pronto! 🙏`
           try {
-            await sendTyping(phone)
-            await sendMessage(phone, closedMsg)
+            await sendTyping(phone, provider)
+            await sendMessage(phone, closedMsg, provider)
             await sb.from("chat_messages").insert({
               order_id: chatOrderId, phone, direction: "outgoing",
               message: `${closedMsg}\n[AUTO-CERRADO]`, type: "text", read: true,
@@ -222,7 +328,7 @@ export async function POST(req: NextRequest) {
         .gte("created_at", since24h)
         .limit(1)
       const alreadySent = (recentAutoReply?.length || 0) > 0
-      if (!alreadySent && isGreenApiConfigured()) {
+      if (!alreadySent && waConfigured) {
         if (cfg.cartaCode) {
           const siteUrl = SITE_URL || "https://osakaoculto20261003.vercel.app"
           const phoneParam = phone ? `?phone=${encodeURIComponent(phone)}` : ""
@@ -237,8 +343,8 @@ export async function POST(req: NextRequest) {
             autoMsg = `¡Hola! 👋 Bienvenido a *${bizName}*.\n\nPuedes ver nuestra carta y hacer tu pedido directamente aquí:\n👉 ${cartaLink}\n\n¡Te esperamos! 🍣`
           }
           try {
-            await sendTyping(phone)
-            await sendMessage(phone, autoMsg)
+            await sendTyping(phone, provider)
+            await sendMessage(phone, autoMsg, provider)
             await sb.from("chat_messages").insert({
               order_id: chatOrderId, phone, direction: "outgoing",
               message: autoMsg, type: "text", read: true,

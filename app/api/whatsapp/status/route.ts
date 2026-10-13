@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server"
-import { getStateInstance, isGreenApiConfigured } from "@/lib/greenapi"
+import { getStateInstance, getActiveProvider, isWhatsAppConfigured } from "@/lib/whatsapp"
 
 export async function GET() {
-  if (!isGreenApiConfigured()) {
-    return NextResponse.json({ status: "not_configured" })
+  const provider = await getActiveProvider()
+
+  if (!(await isWhatsAppConfigured(provider))) {
+    return NextResponse.json({ status: "not_configured", provider })
   }
 
-  const state = await getStateInstance()
-  return NextResponse.json({ status: state || "unknown" })
+  const state = await getStateInstance(provider)
+  return NextResponse.json({ status: state || "unknown", provider })
 }

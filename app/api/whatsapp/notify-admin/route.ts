@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { sendMessage, isGreenApiConfigured } from "@/lib/greenapi"
+import { sendMessage, isWhatsAppConfigured } from "@/lib/whatsapp"
 import { getAllConfig } from "@/lib/supabase-config"
 import { verifyInternalRequest } from "@/lib/api-auth"
 
@@ -7,8 +7,8 @@ export async function POST(req: NextRequest) {
   const authError = verifyInternalRequest(req)
   if (authError) return authError
 
-  if (!isGreenApiConfigured()) {
-    return NextResponse.json({ error: "GreenAPI no configurado" }, { status: 500 })
+  if (!(await isWhatsAppConfigured())) {
+    return NextResponse.json({ error: "WhatsApp no configurado" }, { status: 500 })
   }
 
   try {

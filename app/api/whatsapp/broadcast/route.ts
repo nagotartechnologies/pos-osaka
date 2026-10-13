@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
-import { sendMessage, sendTyping, isGreenApiConfigured } from "@/lib/greenapi"
+import { sendMessage, sendTyping, isWhatsAppConfigured, getActiveProvider } from "@/lib/whatsapp"
 import { normalizePhone } from "@/lib/phone"
 import { verifyInternalRequest } from "@/lib/api-auth"
 
@@ -15,9 +15,12 @@ export async function POST(req: NextRequest) {
   const authError = verifyInternalRequest(req)
   if (authError) return authError
 
-  if (!isGreenApiConfigured()) {
-    return NextResponse.json({ error: "GreenAPI no configurado" }, { status: 500 })
+  if (!(await isWhatsAppConfigured())) {
+    return NextResponse.json({ error: "WhatsApp no configurado" }, { status: 500 })
   }
+
+  // Resolver el proveedor una vez para todo el broadcast
+  const provider = await getActiveProvider()
 
   const { message, days = 30 } = await req.json()
   if (!message?.trim()) {
@@ -61,8 +64,8 @@ export async function POST(req: NextRequest) {
       .replace(/\{negocio\}/g, bizName)
 
     try {
-      await sendTyping(order.client_phone)
-      const result = await sendMessage(order.client_phone, personalMsg)
+      await sendTyping(order.client_phone, provider)
+      const result = await sendMessage(order.client_phone, personalMsg, provider)
       if (result) sentCount++
       else errorCount++
     } catch {
