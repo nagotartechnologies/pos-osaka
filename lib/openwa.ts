@@ -34,6 +34,8 @@ export async function sendMessage(phone: string, message: string): Promise<{ idM
       body: JSON.stringify({
         chatId: formatPhone(phone),
         text: message,
+        // En Baileys la vista previa de enlaces es opcional: pedirla solo si hay URL
+        ...(/https?:\/\//.test(message) ? { linkPreview: true } : {}),
       }),
     })
     if (!res.ok) {
@@ -48,6 +50,18 @@ export async function sendMessage(phone: string, message: string): Promise<{ idM
   }
 }
 
+// ── Elegir ruta y mimetype según la extensión: las imágenes van por send-image
+// (se ven como foto en WhatsApp); el resto por send-document ──
+const IMAGE_MIMES: Record<string, string> = {
+  jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp", gif: "image/gif",
+}
+
+function mediaInfo(fileName: string): { route: string; mimetype: string } {
+  const ext = (fileName.split(".").pop() || "").toLowerCase()
+  if (IMAGE_MIMES[ext]) return { route: "/messages/send-image", mimetype: IMAGE_MIMES[ext] }
+  return { route: "/messages/send-document", mimetype: ext === "pdf" ? "application/pdf" : "application/octet-stream" }
+}
+
 // ── Enviar archivo por URL (para recibo PDF) ──
 export async function sendFileByUrl(
   phone: string,
@@ -58,14 +72,15 @@ export async function sendFileByUrl(
   if (!isOpenWaConfigured()) return null
 
   try {
-    const res = await fetch(apiUrl("/messages/send-document"), {
+    const { route, mimetype } = mediaInfo(fileName)
+    const res = await fetch(apiUrl(route), {
       method: "POST",
       headers: headers(),
       body: JSON.stringify({
         chatId: formatPhone(phone),
         url: fileUrl,
         filename: fileName,
-        mimetype: fileName.endsWith(".pdf") ? "application/pdf" : "application/octet-stream",
+        mimetype,
         caption: caption || "",
       }),
     })
@@ -91,14 +106,15 @@ export async function sendFileByUpload(
   if (!isOpenWaConfigured()) return null
 
   try {
-    const res = await fetch(apiUrl("/messages/send-document"), {
+    const { route, mimetype } = mediaInfo(fileName)
+    const res = await fetch(apiUrl(route), {
       method: "POST",
       headers: headers(),
       body: JSON.stringify({
         chatId: formatPhone(phone),
         base64: fileBase64,
         filename: fileName,
-        mimetype: fileName.endsWith(".pdf") ? "application/pdf" : "application/octet-stream",
+        mimetype,
         caption: caption || "",
       }),
     })
