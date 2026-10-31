@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { sendMessage, isWhatsAppConfigured } from "@/lib/whatsapp"
 import { getTodaySales } from "@/lib/supabase-orders"
-import { getAllConfig } from "@/lib/supabase-config"
+import { getAllConfig, getConfigValue } from "@/lib/supabase-config"
 import { verifyInternalRequest } from "@/lib/api-auth"
 
 export async function POST(req: NextRequest) {
@@ -20,7 +20,12 @@ export async function POST(req: NextRequest) {
     }
 
     const businessName = config.nombreNegocio || "Tu negocio"
-    const { total, count } = await getTodaySales()
+    // Usar la ventana real del día laboral (Iniciar Día → Cerrar Día), que puede
+    // cruzar la medianoche. Si no hay inicio registrado, cae a medianoche.
+    const [lastStart, lastClose] = await Promise.all([getConfigValue("lastDayStart"), getConfigValue("lastDayClose")])
+    const start = lastStart || undefined
+    const close = start && lastClose && lastClose > start ? lastClose : undefined
+    const { total, count } = await getTodaySales(start, close)
     const totalFmt = total.toLocaleString("es-CL")
 
     const message = count > 0

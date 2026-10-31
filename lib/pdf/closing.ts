@@ -20,6 +20,7 @@ export async function generateDailyClosingComanda(
   const totalRevenue = orders.reduce((s, o) => s + (o.total || 0), 0)
   const efectivo = orders.filter((o) => o.payment_method === "efectivo")
   const transferencia = orders.filter((o) => o.payment_method === "transferencia")
+  const tarjeta = orders.filter((o) => o.payment_method === "tarjeta")
   const delivery = orders.filter((o) => o.delivery_type === "delivery")
   const retiro = orders.filter((o) => o.delivery_type === "retiro")
 
@@ -91,6 +92,9 @@ export async function generateDailyClosingComanda(
   y += lh * 0.9
   doc.text(`Transferencia (${transferencia.length}):`, margin, y)
   doc.text(`$${transferencia.reduce((s, o) => s + o.total, 0).toLocaleString("es-CL")}`, width - margin, y, { align: "right" })
+  y += lh * 0.9
+  doc.text(`Tarjeta (${tarjeta.length}):`, margin, y)
+  doc.text(`$${tarjeta.reduce((s, o) => s + o.total, 0).toLocaleString("es-CL")}`, width - margin, y, { align: "right" })
   y += lh * 0.9
   doc.text(`Delivery: ${delivery.length}   Retiro: ${retiro.length}`, margin, y)
   y += lh + 1

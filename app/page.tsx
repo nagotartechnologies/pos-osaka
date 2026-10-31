@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react"
 import { DollarSign, TrendingUp, Clock, Banknote, CreditCard, ArrowRightLeft, CheckCircle2, XCircle, Truck, Store, Package, Users, Share2, ShoppingBag, AlertTriangle, CalendarDays, ChevronLeft, ChevronRight, FileDown, Send, LogOut, PlayCircle } from "lucide-react"
-import { subscribeToOrders, getOrdersByDate, type SupabaseOrder } from "@/lib/supabase-orders"
+import { subscribeToOrders, getOrdersByDate, refreshOrders, type SupabaseOrder } from "@/lib/supabase-orders"
 import { loadBusinessName, isAuthenticated } from "@/lib/config-store"
 import { getConfigValue, setConfigValue } from "@/lib/supabase-config"
 import { resetDebitDeliveryLimit } from "@/lib/debit-limit"
@@ -35,6 +35,7 @@ export default function VentasPage() {
   const [showCloseConfirm, setShowCloseConfirm] = useState(false)
   const [startingDay, setStartingDay] = useState(false)
   const [closingDay, setClosingDay] = useState(false)
+  const [refreshingClose, setRefreshingClose] = useState(false)
 
   const isDayOpen = !!dayStart && (!dayClose || dayStart > dayClose)
 
@@ -126,6 +127,15 @@ export default function VentasPage() {
     }
     setStartingDay(false)
     setShowStartConfirm(false)
+  }
+
+  // Antes de cerrar, resincronizar con la base para que el total mostrado no
+  // dependa del cache Realtime (que puede haber perdido eventos).
+  const openCloseConfirm = async () => {
+    setShowCloseConfirm(true)
+    setRefreshingClose(true)
+    await refreshOrders().catch(() => {})
+    setRefreshingClose(false)
   }
 
   const handleCloseDay = async () => {
@@ -369,7 +379,7 @@ export default function VentasPage() {
           )}
           {isToday && isDayOpen && (
             <button
-              onClick={() => activeOrders.length === 0 ? setShowCloseConfirm(true) : null}
+              onClick={() => activeOrders.length === 0 ? openCloseConfirm() : null}
               disabled={activeOrders.length > 0}
               title={activeOrders.length > 0 ? `Hay ${activeOrders.length} pedido(s) activos sin entregar` : "Cerrar el día"}
               className="flex items-center gap-2 rounded-xl bg-red-500/10 border border-red-500/20 px-3 py-2.5 text-xs font-semibold text-red-500 hover:bg-red-500/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
@@ -692,9 +702,22 @@ export default function VentasPage() {
             <p className="text-xs text-muted-foreground text-center mb-1">
               Las ventas del día actual quedarán registradas hasta este momento.
             </p>
-            <p className="text-xs text-muted-foreground text-center mb-5">
+            <p className="text-xs text-muted-foreground text-center mb-4">
               Los nuevos pedidos se contarán a partir de ahora como el próximo día laboral.
             </p>
+            <div className="rounded-xl border border-border bg-muted/40 px-4 py-3 mb-5 text-center">
+              {refreshingClose ? (
+                <p className="text-xs text-muted-foreground">Actualizando totales...</p>
+              ) : (
+                <>
+                  <p className="text-lg font-bold text-card-foreground">${stats.totalVentas.toLocaleString("es-CL")}</p>
+                  <p className="text-[11px] text-muted-foreground">{completedOrders.length} pedidos entregados</p>
+                  {activeOrders.length > 0 && (
+                    <p className="text-[11px] font-semibold text-amber-500 mt-1">Hay {activeOrders.length} pedido(s) activos sin entregar</p>
+                  )}
+                </>
+              )}
+            </div>
             <div className="flex gap-3">
               <button
                 onClick={() => setShowCloseConfirm(false)}
@@ -705,7 +728,7 @@ export default function VentasPage() {
               </button>
               <button
                 onClick={handleCloseDay}
-                disabled={closingDay}
+                disabled={closingDay || refreshingClose || activeOrders.length > 0}
                 className="flex-1 rounded-xl bg-red-500 py-2.5 text-sm font-semibold text-white hover:bg-red-600 transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
               >
                 {closingDay ? (

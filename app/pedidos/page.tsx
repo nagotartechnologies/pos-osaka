@@ -1866,7 +1866,7 @@ Responde:
                   setDownloadingCierre(true)
                   try {
                     // Pasar el string YYYY-MM-DD directamente para evitar problemas de zona horaria
-                    const dayOrders = await getOrdersByDate(selectedCierreDate)
+                    const dayOrders = await getOrdersByDate(selectedCierreDate, openHourPedidos)
                     if (dayOrders.length === 0) {
                       const dateStr = new Date(selectedCierreDate + 'T12:00:00').toLocaleDateString("es-CL")
                       addToast(`No hay pedidos para el ${dateStr}`, "error")

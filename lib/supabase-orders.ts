@@ -286,20 +286,27 @@ export async function getDebitDeliveryCountSince(sinceIso: string): Promise<numb
   return count || 0
 }
 
-export async function getTodaySales(): Promise<{ total: number; count: number }> {
+// Si se pasan sinceIso/untilIso (inicio/cierre del día laboral) se usa esa
+// ventana; si no, desde medianoche de Santiago hasta ahora.
+export async function getTodaySales(sinceIso?: string, untilIso?: string): Promise<{ total: number; count: number }> {
   const sb = getClient()
   if (!sb) return { total: 0, count: 0 }
-  // Calcular medianoche en Santiago (no en UTC del servidor Vercel)
-  const now = new Date()
-  const chiNow = new Date(now.toLocaleString("sv-SE", { timeZone: "America/Santiago" }).replace(" ", "T") + "Z")
-  const offsetMs = now.getTime() - chiNow.getTime() // ms de diferencia UTC↔Santiago
-  chiNow.setUTCHours(0, 0, 0, 0)                   // medianoche Santiago (como UTC)
-  const todayStart = new Date(chiNow.getTime() + offsetMs) // UTC real de medianoche Santiago
-  const { data, error } = await sb
+  let since = sinceIso
+  if (!since) {
+    // Calcular medianoche en Santiago (no en UTC del servidor Vercel)
+    const now = new Date()
+    const chiNow = new Date(now.toLocaleString("sv-SE", { timeZone: "America/Santiago" }).replace(" ", "T") + "Z")
+    const offsetMs = now.getTime() - chiNow.getTime() // ms de diferencia UTC↔Santiago
+    chiNow.setUTCHours(0, 0, 0, 0)                   // medianoche Santiago (como UTC)
+    since = new Date(chiNow.getTime() + offsetMs).toISOString() // UTC real de medianoche Santiago
+  }
+  let query = sb
     .from("orders")
     .select("total")
-    .gte("created_at", todayStart.toISOString())
+    .gte("created_at", since)
     .neq("status", "cancelado")
+  if (untilIso) query = query.lte("created_at", untilIso)
+  const { data, error } = await query
   if (error) { console.error("getTodaySales error:", error); return { total: 0, count: 0 } }
   const orders = data || []
   const sum = orders.reduce((acc, o) => acc + (Number(o.total) || 0), 0)
@@ -615,7 +622,19 @@ function _ensureChannel() {
     _listeners.forEach((fn) => fn([]))
   })
 
-  sb.channel("orders-global")
+  _setupVisibilityRefresh()
+  _subscribeChannel(sb)
+}
+
+let _channel: ReturnType<SupabaseClient["channel"]> | null = null
+let _missedEvents = false
+let _reconnectTimer: ReturnType<typeof setTimeout> | null = null
+
+function _subscribeChannel(sb: SupabaseClient) {
+  if (_channel) { sb.removeChannel(_channel); _channel = null }
+  const channel = sb.channel("orders-global")
+  _channel = channel
+  channel
     .on(
       "postgres_changes",
       { event: "*", schema: "public", table: "orders" },
@@ -627,18 +646,47 @@ function _ensureChannel() {
       }
     )
     .subscribe((status) => {
+      if (_channel !== channel) return
       if (status === "SUBSCRIBED") {
         _channelActive = true
         _channelStarting = false
+        // Si el canal estuvo caído, pudimos perder INSERT/UPDATE: resincronizar
+        if (_missedEvents) {
+          _missedEvents = false
+          refreshOrders().catch(() => {})
+        }
       } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
         _channelActive = false
-        _channelStarting = false // permite reintento la próxima vez
+        _channelStarting = false
+        _missedEvents = true
+        // Reintentar la conexión en vez de esperar a una nueva suscripción
+        if (!_reconnectTimer) {
+          _reconnectTimer = setTimeout(() => {
+            _reconnectTimer = null
+            if (!_channelActive) _subscribeChannel(sb)
+          }, 5000)
+        }
       }
     })
+}
 
-  // NOTA: El refetch en visibilitychange fue removido para reducir egress.
-  // Realtime mantiene los datos sincronizados via WebSocket. Si la conexión
-  // cae, _channelActive se marca false y se reintenta en la próxima suscripción.
+// Al volver a la pestaña tras un rato oculta (tablet suspendida, app en
+// segundo plano) el WebSocket puede haber perdido eventos sin reportar error:
+// resincronizar para que los totales de caja no queden desactualizados.
+const VISIBILITY_REFRESH_MS = 30_000
+let _visibilitySetup = false
+let _hiddenAt = 0
+
+function _setupVisibilityRefresh() {
+  if (_visibilitySetup || typeof document === "undefined") return
+  _visibilitySetup = true
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") { _hiddenAt = Date.now(); return }
+    if (_hiddenAt && Date.now() - _hiddenAt > VISIBILITY_REFRESH_MS) {
+      refreshOrders().catch(() => {})
+    }
+    _hiddenAt = 0
+  })
 }
 
 /**
