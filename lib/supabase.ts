@@ -2,14 +2,69 @@ import { createClient, SupabaseClient } from "@supabase/supabase-js"
 
 export const STORAGE_BUCKET = "media"
 
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || ""
+const ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ""
+
+// ── Token de sesión del staff (JWT emitido por /api/auth/*) ─────
+// Sin sesión válida se usa la anon key, que con RLS solo puede leer el menú.
+let _token: string | null = null
+let _tokenExp = 0
+let _noSessionUntil = 0
+let _inflight: Promise<string | null> | null = null
+
+const PUBLIC_PATHS = ["/carta", "/login"]
+const isPublicPath = () => typeof window !== "undefined" && PUBLIC_PATHS.some((p) => window.location.pathname.startsWith(p))
+
+export function setSessionToken(token: string | null, exp: number | null): void {
+  _token = token
+  _tokenExp = exp || 0
+  _noSessionUntil = 0
+  if (_shared) _shared.realtime.setAuth(token || ANON_KEY)
+}
+
+export function clearSessionToken(): void {
+  _token = null
+  _tokenExp = 0
+  if (_shared) _shared.realtime.setAuth(ANON_KEY)
+}
+
+async function fetchSessionToken(): Promise<string | null> {
+  try {
+    const res = await fetch("/api/auth/session", { credentials: "same-origin", cache: "no-store" })
+    if (!res.ok) {
+      _noSessionUntil = Date.now() + 30_000
+      if (res.status === 401) window.dispatchEvent(new Event("pos-osaka-session-expired"))
+      return null
+    }
+    const j = await res.json()
+    setSessionToken(j.token, j.exp)
+    return j.token
+  } catch {
+    return null
+  }
+}
+
+async function getAccessToken(): Promise<string> {
+  if (_token && Date.now() < _tokenExp - 60_000) return _token
+  if (isPublicPath() || Date.now() < _noSessionUntil) return ANON_KEY
+  if (!_inflight) _inflight = fetchSessionToken().finally(() => { _inflight = null })
+  return (await _inflight) || ANON_KEY
+}
+
 // ── Cliente compartido (singleton global) ───────────────────────
 let _shared: SupabaseClient | null = null
 
 export function getSharedClient(): SupabaseClient {
   if (_shared) return _shared
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || ""
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ""
-  _shared = createClient(url, key)
+  if (typeof window === "undefined") {
+    // En el servidor se usa service_role (la key nunca llega al bundle del cliente).
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ""
+    _shared = createClient(SUPABASE_URL, serviceKey || ANON_KEY, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    })
+    return _shared
+  }
+  _shared = createClient(SUPABASE_URL, ANON_KEY, { accessToken: getAccessToken })
   return _shared
 }
 

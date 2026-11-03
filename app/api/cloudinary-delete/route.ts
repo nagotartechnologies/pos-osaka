@@ -21,7 +21,7 @@ function extractPublicId(url: string): string | null {
 }
 
 export async function POST(req: NextRequest) {
-  const authError = verifyInternalRequest(req)
+  const authError = await verifyInternalRequest(req)
   if (authError) return authError
 
   if (!CLOUD_NAME || !API_KEY || !API_SECRET) {

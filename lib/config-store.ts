@@ -152,94 +152,83 @@ export function loadAddress(): string {
 }
 
 // --- Auth con roles ---
+// La sesión real vive en una cookie httpOnly validada por el servidor
+// (/api/auth/*). En localStorage solo queda un "hint" de rol y expiración para
+// la UI: alterarlo no da acceso a datos (proxy.ts + RLS lo impiden).
 const AUTH_KEY = "pos-osaka-auth"
-const DEFAULT_ADMIN_PIN = "1234"
-const DEFAULT_VENDOR_PIN = "0000"
+const ROLE_HINT_KEY = AUTH_KEY + "-role"
+const EXP_HINT_KEY = AUTH_KEY + "-exp"
 
 export type UserRole = "admin" | "vendedor"
 
-export function checkPin(pin: string): UserRole | null {
-  if (typeof window === "undefined") return null
-  const adminPin = localStorage.getItem(AUTH_KEY + "-pin-admin") || DEFAULT_ADMIN_PIN
-  const vendorPin = localStorage.getItem(AUTH_KEY + "-pin-vendedor") || DEFAULT_VENDOR_PIN
-  if (pin === adminPin) return "admin"
-  if (pin === vendorPin) return "vendedor"
-  return null
+// Limpieza de claves legacy que exponían PINs y sesión en localStorage
+if (typeof window !== "undefined") {
+  for (const k of ["-pin-admin", "-pin-vendedor", "-session", "-session-ts"]) localStorage.removeItem(AUTH_KEY + k)
+}
+
+function saveHint(role: UserRole, sessionExp: number): void {
+  localStorage.setItem(ROLE_HINT_KEY, role)
+  localStorage.setItem(EXP_HINT_KEY, String(sessionExp))
+}
+
+function clearHint(): void {
+  localStorage.removeItem(ROLE_HINT_KEY)
+  localStorage.removeItem(EXP_HINT_KEY)
 }
 
 /**
- * Verifica PIN contra Supabase config, con fallback a localStorage.
+ * Valida el PIN en el servidor. Si es correcto, el servidor setea la cookie de
+ * sesión y devuelve el token para consultar Supabase.
  */
-export async function checkPinAsync(pin: string): Promise<UserRole | null> {
-  if (typeof window === "undefined") return null
+export async function loginWithPin(pin: string): Promise<{ role?: UserRole; error?: string }> {
+  if (typeof window === "undefined") return { error: "No disponible" }
   try {
-    const { getAllConfig } = await import("@/lib/supabase-config")
-    const cfg = await getAllConfig()
-    const adminPin = cfg.pinAdmin || localStorage.getItem(AUTH_KEY + "-pin-admin") || DEFAULT_ADMIN_PIN
-    const vendorPin = cfg.pinVendedor || localStorage.getItem(AUTH_KEY + "-pin-vendedor") || DEFAULT_VENDOR_PIN
-    // Sincronizar a localStorage para acceso rápido futuro
-    if (cfg.pinAdmin) localStorage.setItem(AUTH_KEY + "-pin-admin", cfg.pinAdmin)
-    if (cfg.pinVendedor) localStorage.setItem(AUTH_KEY + "-pin-vendedor", cfg.pinVendedor)
-    if (pin === adminPin) return "admin"
-    if (pin === vendorPin) return "vendedor"
-    return null
+    const res = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({ pin }),
+    })
+    const j = await res.json().catch(() => ({}))
+    if (!res.ok) return { error: j.error || "PIN incorrecto" }
+    const { setSessionToken } = await import("@/lib/supabase")
+    setSessionToken(j.token, j.exp)
+    saveHint(j.role, j.sessionExp)
+    return { role: j.role }
   } catch {
-    // Fallback a localStorage si Supabase falla
-    return checkPin(pin)
+    return { error: "Error de conexión" }
   }
 }
 
-export function savePin(pin: string, role?: UserRole): void {
-  if (typeof window === "undefined") return
-  if (role) {
-    localStorage.setItem(AUTH_KEY + "-pin-" + role, pin)
-  } else {
-    localStorage.setItem(AUTH_KEY + "-pin-admin", pin)
-  }
-}
-
-/**
- * Guarda PIN en Supabase config además de localStorage.
- */
-export async function savePinToSupabase(pin: string, role: UserRole): Promise<void> {
-  savePin(pin, role)
+/** Cambia el PIN de un rol (solo admin, validado en el servidor). */
+export async function savePinToSupabase(pin: string, role: UserRole): Promise<{ ok: boolean; error?: string }> {
   try {
-    const { setConfigValue } = await import("@/lib/supabase-config")
-    const key = role === "admin" ? "pinAdmin" : "pinVendedor"
-    await setConfigValue(key, pin)
+    const res = await fetch("/api/auth/pin", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({ pin, role }),
+    })
+    const j = await res.json().catch(() => ({}))
+    return res.ok ? { ok: true } : { ok: false, error: j.error || "No se pudo guardar el PIN" }
   } catch {
-    // Si falla Supabase, al menos queda en localStorage
+    return { ok: false, error: "Error de conexión" }
   }
-}
-
-export function loadPin(role: UserRole): string {
-  if (typeof window === "undefined") return ""
-  const key = AUTH_KEY + "-pin-" + role
-  const defaultPin = role === "admin" ? DEFAULT_ADMIN_PIN : DEFAULT_VENDOR_PIN
-  return localStorage.getItem(key) || defaultPin
-}
-
-const SESSION_TTL = 24 * 60 * 60 * 1000 // 24 horas
-
-export function setSession(role: UserRole = "admin"): void {
-  if (typeof window === "undefined") return
-  localStorage.setItem(AUTH_KEY + "-session", "1")
-  localStorage.setItem(AUTH_KEY + "-role", role)
-  localStorage.setItem(AUTH_KEY + "-session-ts", String(Date.now()))
 }
 
 export function clearSession(): void {
   if (typeof window === "undefined") return
-  localStorage.removeItem(AUTH_KEY + "-session")
-  localStorage.removeItem(AUTH_KEY + "-role")
+  clearHint()
+  import("@/lib/supabase").then(({ clearSessionToken }) => clearSessionToken()).catch(() => {})
+  fetch("/api/auth/logout", { method: "POST", credentials: "same-origin", keepalive: true }).catch(() => {})
 }
 
 export function isAuthenticated(): boolean {
   if (typeof window === "undefined") return false
-  if (localStorage.getItem(AUTH_KEY + "-session") !== "1") return false
-  const ts = Number(localStorage.getItem(AUTH_KEY + "-session-ts") || "0")
-  if (ts && Date.now() - ts > SESSION_TTL) {
-    clearSession()
+  const role = localStorage.getItem(ROLE_HINT_KEY)
+  const exp = Number(localStorage.getItem(EXP_HINT_KEY) || "0")
+  if (!role || !exp || exp < Date.now()) {
+    clearHint()
     return false
   }
   return true
@@ -247,5 +236,14 @@ export function isAuthenticated(): boolean {
 
 export function getUserRole(): UserRole {
   if (typeof window === "undefined") return "vendedor"
-  return (localStorage.getItem(AUTH_KEY + "-role") as UserRole) || "admin"
+  return localStorage.getItem(ROLE_HINT_KEY) === "admin" ? "admin" : "vendedor"
+}
+
+// Si el servidor rechaza la cookie (expirada o revocada), cerrar sesión en la UI
+if (typeof window !== "undefined") {
+  window.addEventListener("pos-osaka-session-expired", () => {
+    if (!localStorage.getItem(ROLE_HINT_KEY)) return
+    clearHint()
+    if (!["/login", "/carta"].some((p) => window.location.pathname.startsWith(p))) window.location.replace("/login")
+  })
 }

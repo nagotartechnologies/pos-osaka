@@ -5,9 +5,8 @@ import { useParams } from "next/navigation"
 import Image from "next/image"
 import { type MenuItem, type CustomizationOption } from "@/lib/store"
 import { loadLogoForTheme, loadBusinessName, loadWhatsApp, loadBankData, loadAddress } from "@/lib/config-store"
-import { getAllConfig, getConfigValue } from "@/lib/supabase-config"
-import { addOrder } from "@/lib/supabase-orders"
-import { isDebitDeliveryBlocked } from "@/lib/debit-limit"
+import { getPublicConfig } from "@/lib/supabase-config"
+import { SALSAS } from "@/lib/carta-salsas"
 import { uploadImage, isCloudinaryConfigured, optimizeCloudinaryUrl } from "@/lib/cloudinary"
 import { getAvailableProducts, getCategories as getDbCategories, isNewProduct, sortNewFirst, getEffectivePrice, getActiveDiscountPct, getDiscountCustomerLabel, setNewProductDays, type Product } from "@/lib/supabase-menu"
 import { parseSchedule, checkStoreOpen, DAY_KEYS, DAY_LABELS, type WeekSchedule } from "@/lib/schedule"
@@ -16,12 +15,6 @@ import { MapPin, Clock, Star, Sparkles, Minus, Plus, ShoppingBag, X, Trash2, Che
 type DeliveryType = "delivery" | "retiro"
 type PaymentMethod = "efectivo" | "transferencia" | "tarjeta" | ""
 
-const SALSAS: MenuItem[] = [
-  { id: "salsa-soya", name: "Salsa Soya", price: 0, image: "", category: "salsas" },
-  { id: "salsa-agridulce", name: "Salsa Agridulce", price: 0, image: "", category: "salsas" },
-  { id: "salsa-acevichada", name: "Salsa Acevichada", price: 500, image: "", category: "salsas" },
-  { id: "salsa-teriyaki", name: "Salsa Teriyaki", price: 500, image: "", category: "salsas" },
-]
 const MAX_FREE_SALSAS = 999
 
 interface CartItem extends MenuItem {
@@ -121,18 +114,20 @@ export default function CartaPage() {
   const [deliveryZoneMsg, setDeliveryZoneMsg] = useState("")
   const [promoBanners, setPromoBanners] = useState<{ id: string; text: string; color: "red" | "green" }[]>([])
 
-  // Validar código de acceso
+  // Validar código de acceso (en el servidor) y traer la config pública de la carta
+  const publicCfgRef = useRef<Record<string, string>>({})
   useEffect(() => {
-    getConfigValue("cartaCode").then((savedCode) => {
-      setAuthorized(savedCode === code)
+    getPublicConfig(code).then((res) => {
+      publicCfgRef.current = res.config
+      setDebitBlocked(res.debitBlocked)
+      setAuthorized(res.authorized)
     })
   }, [code])
 
   useEffect(() => {
     if (authorized !== true) return
     async function loadAll() {
-      // Cargar config del negocio desde Supabase
-      const dbConfig = await getAllConfig()
+      const dbConfig = publicCfgRef.current
       setNewProductDays(dbConfig.newProductDays)
       if (dbConfig.logoPublicUrl) setLogo(dbConfig.logoPublicUrl)
       else setLogo(loadLogoForTheme("dark"))
@@ -257,8 +252,8 @@ export default function CartaPage() {
   const offerItems = useMemo(() => menuItems.filter((i) => i.discountPct), [menuItems])
 
   useEffect(() => {
-    if (checkoutStep === 3) isDebitDeliveryBlocked().then(setDebitBlocked).catch(() => {})
-  }, [checkoutStep])
+    if (checkoutStep === 3) getPublicConfig(code).then((res) => setDebitBlocked(res.debitBlocked)).catch(() => {})
+  }, [checkoutStep, code])
 
   const getCategoryName = (catId: string) => {
     return categories.find((c) => c.id === catId)?.name || catId
@@ -472,10 +467,10 @@ export default function CartaPage() {
       setUploadingReceipt(false)
     }
 
-    // Guardar pedido en Supabase
+    // Crear pedido vía servidor (valida y envía la confirmación por WhatsApp)
     let newOrder: any = null
     try {
-      newOrder = await addOrder({
+      const orderData = {
         items: cart.map(c => {
           const extras: { description: string; price: number }[] = []
           if (c.unitChoices && c.unitChoices.length > 0) {
@@ -489,7 +484,7 @@ export default function CartaPage() {
           }
           if (c.selectedProtein) extras.push({ description: `Proteína: ${c.selectedProtein.name}`, price: c.selectedProtein.price })
           if (c.selectedWrapper) extras.push({ description: `Envoltura: ${c.selectedWrapper.name}`, price: c.selectedWrapper.price })
-          return { id: c.id, name: c.name, price: c.price, quantity: c.quantity, category: c.category, notes: c.notes?.trim() || "", extras: extras.length > 0 ? extras : undefined, customBuild: c.customBuild || false, customBuildNotes: c.customBuildNotes || "" }
+          return { id: c.id, name: c.name, price: c.price, quantity: c.quantity, category: c.category, notes: c.notes?.trim() || "", extras: extras.length > 0 ? extras : undefined, customBuild: c.customBuild || false, customBuildNotes: c.customBuildNotes || "", proteinName: c.selectedProtein?.name || null, wrapperName: c.selectedWrapper?.name || null }
         }),
         total: cartTotal,
         clientName: deliveryType === "delivery" && !clientName.trim() ? clientPhone.trim() : clientName.trim(),
@@ -501,7 +496,25 @@ export default function CartaPage() {
         cashAmount: hasCustomBuild ? null : (paymentMethod === "efectivo" ? cashNum : null),
         change: hasCustomBuild ? null : (paymentMethod === "efectivo" ? changeAmount : null),
         receiptUrl: hasCustomBuild ? null : (finalReceiptUrl || null),
+      }
+      const res = await fetch("/api/public/orders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code, order: orderData }),
       })
+      const j = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        // Precios/productos cambiaron: recargar el menú para que el carrito se sincronice
+        if (j.code === "PRICE_MISMATCH") {
+          getAvailableProducts().then((prods) => setRawProducts(sortNewFirst(prods, (p) => p.created_at))).catch(() => {})
+          setNow(Date.now())
+        }
+        submitLockRef.current = false
+        setSubmittingOrder(false)
+        alert(j.error || "No se pudo crear el pedido. Intenta de nuevo.")
+        return
+      }
+      newOrder = j
     } catch (err) {
       console.error("Error creando pedido:", err)
       submitLockRef.current = false
@@ -515,20 +528,6 @@ export default function CartaPage() {
       setSubmittingOrder(false)
       alert("No se pudo crear el pedido. Verifica tu conexión e intenta de nuevo.")
       return
-    }
-
-    // Enviar mensaje de confirmación por WhatsApp
-    if (newOrder) {
-      try {
-        const confirmationMsg = `¡Hola ${clientName.trim()}! 🍣\n\nTu pedido *#${newOrder.id}* ya está en manos de *${businessName}*.\n\nTe avisaremos por WhatsApp cuando comencemos a prepararlo.\n\n¡Gracias por preferirnos!`
-        await fetch("/api/whatsapp/send", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "x-internal-token": process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "" },
-          body: JSON.stringify({ phone: clientPhone.trim(), message: confirmationMsg }),
-        })
-      } catch (err) {
-        console.error("Error enviando confirmación WhatsApp:", err)
-      }
     }
 
     setSubmittingOrder(false)

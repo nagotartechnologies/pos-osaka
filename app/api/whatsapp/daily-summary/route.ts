@@ -5,7 +5,7 @@ import { getAllConfig, getConfigValue } from "@/lib/supabase-config"
 import { verifyInternalRequest } from "@/lib/api-auth"
 
 export async function POST(req: NextRequest) {
-  const authError = verifyInternalRequest(req)
+  const authError = await verifyInternalRequest(req)
   if (authError) return authError
 
   if (!(await isWhatsAppConfigured())) {

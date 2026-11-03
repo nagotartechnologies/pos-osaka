@@ -1,5 +1,5 @@
 import type { Metadata } from "next"
-import { createClient } from "@supabase/supabase-js"
+import { getAdminClient } from "@/lib/supabase-admin"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://osakasushi.nagotartech.com"
 
@@ -8,7 +8,7 @@ const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://osakasushi.nagotar
 export async function generateMetadata(): Promise<Metadata> {
   let bizName = "Nuestra carta"
   try {
-    const sb = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL || "", process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "")
+    const sb = getAdminClient()
     const { data } = await sb.from("config").select("value").eq("key", "nombreNegocio").single()
     if (data?.value) bizName = data.value.trim()
   } catch {}

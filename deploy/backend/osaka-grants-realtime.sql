@@ -1,17 +1,19 @@
 -- Privilegios para los roles de Supabase sobre el schema public
--- (las RLS policies ya permiten el acceso; esto otorga los privilegios de tabla)
+-- anon (key pública) solo lee el menú; el resto lo restringen las RLS de
+-- docs/migrations/2026-11-02-security-rls.sql (ejecutarla después de este archivo).
 GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
 
-GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated, service_role;
-GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated, service_role;
-GRANT ALL ON ALL FUNCTIONS IN SCHEMA public TO anon, authenticated, service_role;
+GRANT ALL ON ALL TABLES IN SCHEMA public TO authenticated, service_role;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO authenticated, service_role;
+GRANT ALL ON ALL FUNCTIONS IN SCHEMA public TO authenticated, service_role;
+GRANT SELECT ON public.products, public.categories TO anon;
 
 ALTER DEFAULT PRIVILEGES IN SCHEMA public
-  GRANT ALL ON TABLES TO anon, authenticated, service_role;
+  GRANT ALL ON TABLES TO authenticated, service_role;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public
-  GRANT ALL ON SEQUENCES TO anon, authenticated, service_role;
+  GRANT ALL ON SEQUENCES TO authenticated, service_role;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public
-  GRANT ALL ON FUNCTIONS TO anon, authenticated, service_role;
+  GRANT ALL ON FUNCTIONS TO authenticated, service_role;
 
 -- ── Realtime ────────────────────────────────────────────────────
 -- Recrea la publicacion supabase_realtime con las tablas de la app.

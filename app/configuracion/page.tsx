@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react"
 import { useTheme } from "next-themes"
 import Image from "next/image"
-import { saveSupabaseConfig, loadSupabaseConfig, saveLogo, removeLogo, saveBusinessName, checkPin, savePin, savePinToSupabase, loadPin, saveWhatsApp, loadWhatsApp, saveBankData, loadBankData, saveAddress, loadAddress, type BankData, type UserRole } from "@/lib/config-store"
+import { saveSupabaseConfig, loadSupabaseConfig, saveLogo, removeLogo, saveBusinessName, savePinToSupabase, saveWhatsApp, loadWhatsApp, saveBankData, loadBankData, saveAddress, loadAddress, type BankData, type UserRole } from "@/lib/config-store"
 import { getAllConfig, getLogoConfig, setMultipleConfig, getConfigValue, setConfigValue } from "@/lib/supabase-config"
 import { testConnection } from "@/lib/supabase"
 import { extractColorsFromImage, applyPrimaryColor, resetPrimaryColor, saveColorToStorage, clearColorStorage, loadColorFromStorage } from "@/lib/color-extractor"
@@ -1388,21 +1388,6 @@ export default function ConfiguracionPage() {
           {activeSection === "seguridad" && (
             <SectionCard title="Seguridad — PINs de Acceso" description="Configura los PINs para administrador y vendedor">
               <div className="space-y-6">
-                {(loadPin("admin") === "1234" || loadPin("vendedor") === "0000") && (
-                  <div className="flex items-start gap-3 rounded-xl border border-red-500/30 bg-red-500/5 p-4">
-                    <AlertTriangle className="h-5 w-5 text-red-500 flex-shrink-0 mt-0.5" />
-                    <div>
-                      <p className="text-sm font-semibold text-red-600 dark:text-red-400">PINs por defecto detectados</p>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        {loadPin("admin") === "1234" && loadPin("vendedor") === "0000"
-                          ? "Ambos PINs (Admin y Vendedor) tienen valores por defecto. Cámbialos para proteger el acceso al sistema."
-                          : loadPin("admin") === "1234"
-                            ? "El PIN de Admin sigue siendo \"1234\". Cámbialo para proteger el acceso completo al sistema."
-                            : "El PIN de Vendedor sigue siendo \"0000\". Cámbialo para mayor seguridad."}
-                      </p>
-                    </div>
-                  </div>
-                )}
                 {/* PIN Administrador */}
                 <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4 space-y-3">
                   <div className="flex items-center gap-2 mb-1">
@@ -1413,22 +1398,23 @@ export default function ConfiguracionPage() {
                     <Key className="h-4 w-4 text-muted-foreground flex-shrink-0 hidden sm:block" />
                     <input
                       type="password"
-                      maxLength={6}
+                      maxLength={4}
                       value={pinNuevo}
                       onChange={(e) => { setPinNuevo(e.target.value.replace(/\D/g, "")); setPinError(""); setPinSuccess(false) }}
-                      placeholder={`PIN actual: ${loadPin("admin").replace(/./g, "•")}`}
+                      placeholder="Nuevo PIN (4 dígitos)"
                       className="w-full rounded-xl border border-border bg-background px-3 sm:px-4 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500/40"
                     />
                     <button
-                      onClick={() => {
-                        if (pinNuevo.length < 4) { setPinError("El PIN debe tener al menos 4 dígitos"); return }
-                        savePinToSupabase(pinNuevo, "admin")
+                      onClick={async () => {
+                        if (pinNuevo.length !== 4) { setPinError("El PIN debe tener exactamente 4 dígitos"); return }
+                        const res = await savePinToSupabase(pinNuevo, "admin")
+                        if (!res.ok) { setPinError(res.error || "No se pudo guardar el PIN"); return }
                         setPinNuevo("")
                         setPinSuccess(true)
                         setPinError("")
                         setTimeout(() => setPinSuccess(false), 3000)
                       }}
-                      disabled={pinNuevo.length < 4}
+                      disabled={pinNuevo.length !== 4}
                       className="flex-shrink-0 rounded-xl bg-amber-500 px-3 sm:px-4 py-2.5 text-xs sm:text-sm font-semibold text-white hover:bg-amber-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                     >
                       Guardar
@@ -1446,22 +1432,23 @@ export default function ConfiguracionPage() {
                     <Key className="h-4 w-4 text-muted-foreground flex-shrink-0 hidden sm:block" />
                     <input
                       type="password"
-                      maxLength={6}
+                      maxLength={4}
                       value={pinConfirm}
                       onChange={(e) => { setPinConfirm(e.target.value.replace(/\D/g, "")); setPinError(""); setPinSuccess(false) }}
-                      placeholder={`PIN actual: ${loadPin("vendedor").replace(/./g, "•")}`}
+                      placeholder="Nuevo PIN (4 dígitos)"
                       className="w-full rounded-xl border border-border bg-background px-3 sm:px-4 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500/40"
                     />
                     <button
-                      onClick={() => {
-                        if (pinConfirm.length < 4) { setPinError("El PIN debe tener al menos 4 dígitos"); return }
-                        savePinToSupabase(pinConfirm, "vendedor")
+                      onClick={async () => {
+                        if (pinConfirm.length !== 4) { setPinError("El PIN debe tener exactamente 4 dígitos"); return }
+                        const res = await savePinToSupabase(pinConfirm, "vendedor")
+                        if (!res.ok) { setPinError(res.error || "No se pudo guardar el PIN"); return }
                         setPinConfirm("")
                         setPinSuccess(true)
                         setPinError("")
                         setTimeout(() => setPinSuccess(false), 3000)
                       }}
-                      disabled={pinConfirm.length < 4}
+                      disabled={pinConfirm.length !== 4}
                       className="flex-shrink-0 rounded-xl bg-blue-500 px-3 sm:px-4 py-2.5 text-xs sm:text-sm font-semibold text-white hover:bg-blue-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                     >
                       Guardar

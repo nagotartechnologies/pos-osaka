@@ -46,7 +46,7 @@ export function ChatInput({
     try {
       const res = await fetch("/api/whatsapp/send", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-internal-token": process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "" },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ phone: clientPhone, message: text }),
       })
       if (!res.ok) {
@@ -76,7 +76,7 @@ export function ChatInput({
         const imageUrl = await uploadImage(files[i], "chat-media")
         const res = await fetch("/api/whatsapp/send", {
           method: "POST",
-          headers: { "Content-Type": "application/json", "x-internal-token": process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "" },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ phone: clientPhone, type: "url", fileUrl: imageUrl, fileName: files[i].name, caption: "" }),
         })
         if (!res.ok) {
@@ -115,7 +115,7 @@ export function ChatInput({
       const msg = `👉 Aquí está nuestra carta de *${bizName}*:\n${cartaLink}`
       const res = await fetch("/api/whatsapp/send", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-internal-token": process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "" },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ phone: clientPhone, message: msg }),
       })
       if (!res.ok) { onError("Error al enviar la carta"); return }

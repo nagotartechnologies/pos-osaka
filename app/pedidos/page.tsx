@@ -44,7 +44,7 @@ import {
   deleteOrder,
   clearDelivered,
   getTodayOrders,
-  getOrdersByDate,
+  getOrdersByBusinessDay,
   getOrdersByDateRange,
   quoteOrderItems,
   updateOrderDiscount,
@@ -165,7 +165,6 @@ export default function PedidosPage() {
   const [dateRange, setDateRange] = useState<1 | 7>(1)
   const [filterMode, setFilterMode] = useState<"range" | "date">("range")
   const [filterDate, setFilterDate] = useState(() => new Date().toISOString().split("T")[0])
-  const [openHourPedidos, setOpenHourPedidos] = useState<number>(0)
   const [isLoadingOrders, setIsLoadingOrders] = useState(false)
 
   // Cotización "Ármalo a tu pinta"
@@ -268,10 +267,6 @@ Responde:
       setDayOpen(open)
       if (cfg.lastDayStart) setBizDayStart(cfg.lastDayStart)
       if (cfg.lastDayClose && cfg.lastDayStart && cfg.lastDayClose > cfg.lastDayStart) setBizDayClose(cfg.lastDayClose)
-      if (cfg.horaApertura) {
-        const [hh] = cfg.horaApertura.split(":").map(Number)
-        setOpenHourPedidos(hh)
-      }
       if (cfg.highDemandMsg) {
         setHighDemandMsg(cfg.highDemandMsg)
         setHighDemandInput(cfg.highDemandMsg)
@@ -300,7 +295,7 @@ Responde:
     try {
       let data: SupabaseOrder[]
       if (filterMode === "date") {
-        data = await getOrdersByDate(filterDate, openHourPedidos)
+        data = await getOrdersByBusinessDay(filterDate)
       } else if (filterMode === "range" && dateRange === 1) {
         // Vista "hoy": respetar estado del día (cerrado → vacío)
         const dayIsOpen = !!bizDayStart && (!bizDayClose || bizDayClose <= bizDayStart)
@@ -320,7 +315,7 @@ Responde:
       setIsLoadingOrders(false)
       setLoading(false)
     }
-  }, [dateRange, filterMode, filterDate, openHourPedidos, bizDayStart, bizDayClose])
+  }, [dateRange, filterMode, filterDate, bizDayStart, bizDayClose])
 
   // Carga inicial — se re-ejecuta solo cuando cambian los filtros
   useEffect(() => {
@@ -1626,7 +1621,7 @@ Responde:
                   try {
                     const res = await fetch("/api/whatsapp/broadcast", {
                       method: "POST",
-                      headers: { "Content-Type": "application/json", "x-internal-token": process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "" },
+                      headers: { "Content-Type": "application/json" },
                       body: JSON.stringify({ message: broadcastMsg }),
                     })
                     const data = await res.json()
@@ -1866,7 +1861,7 @@ Responde:
                   setDownloadingCierre(true)
                   try {
                     // Pasar el string YYYY-MM-DD directamente para evitar problemas de zona horaria
-                    const dayOrders = await getOrdersByDate(selectedCierreDate, openHourPedidos)
+                    const dayOrders = await getOrdersByBusinessDay(selectedCierreDate)
                     if (dayOrders.length === 0) {
                       const dateStr = new Date(selectedCierreDate + 'T12:00:00').toLocaleDateString("es-CL")
                       addToast(`No hay pedidos para el ${dateStr}`, "error")

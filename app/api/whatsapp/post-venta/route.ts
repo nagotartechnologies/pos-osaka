@@ -1,18 +1,16 @@
 import { NextRequest, NextResponse } from "next/server"
-import { createClient } from "@supabase/supabase-js"
 import { sendMessage, sendTyping, isWhatsAppConfigured, getActiveProvider } from "@/lib/whatsapp"
 import { normalizePhone } from "@/lib/phone"
 import { verifyInternalRequest } from "@/lib/api-auth"
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ""
-const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ""
+import { getAdminClient } from "@/lib/supabase-admin"
 
 function getServerClient() {
-  return createClient(supabaseUrl, supabaseKey)
+  return getAdminClient()
 }
 
 export async function POST(req: NextRequest) {
-  const authError = verifyInternalRequest(req)
+  const authError = await verifyInternalRequest(req)
   if (authError) return authError
 
   if (!(await isWhatsAppConfigured())) {

@@ -41,12 +41,37 @@ export async function getAllConfig(): Promise<Record<string, string>> {
     .select("key, value")
     .neq("key", "logo")
     .neq("key", "logoLight")
+    .neq("key", "businessDays")
+    .not("key", "like", "pin%")
   if (error || !data) return _configCache || {}
   const result: Record<string, string> = {}
   data.forEach((row: { key: string; value: string }) => { result[row.key] = row.value })
   _configCache = result
   _configCacheTime = now
   return result
+}
+
+/**
+ * Config pública (sin sesión): branding para /login y, si se pasa el código
+ * correcto de la carta, los datos que necesita /carta. Lo sirve el servidor
+ * con una whitelist de keys, porque anon no tiene acceso a la tabla config.
+ */
+export interface PublicConfig {
+  authorized: boolean
+  debitBlocked: boolean
+  config: Record<string, string>
+}
+
+export async function getPublicConfig(code?: string): Promise<PublicConfig> {
+  const empty: PublicConfig = { authorized: false, debitBlocked: false, config: {} }
+  try {
+    const qs = code ? `?code=${encodeURIComponent(code)}` : ""
+    const res = await fetch(`/api/public/config${qs}`, { cache: "no-store" })
+    if (!res.ok) return empty
+    return { ...empty, ...(await res.json()) }
+  } catch {
+    return empty
+  }
 }
 
 /**

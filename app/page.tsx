@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useMemo } from "react"
 import { DollarSign, TrendingUp, Clock, Banknote, CreditCard, ArrowRightLeft, CheckCircle2, XCircle, Truck, Store, Package, Users, Share2, ShoppingBag, AlertTriangle, CalendarDays, ChevronLeft, ChevronRight, FileDown, Send, LogOut, PlayCircle } from "lucide-react"
-import { subscribeToOrders, getOrdersByDate, refreshOrders, type SupabaseOrder } from "@/lib/supabase-orders"
+import { subscribeToOrders, getOrdersByBusinessDay, refreshOrders, type SupabaseOrder } from "@/lib/supabase-orders"
+import { recordDayStart, recordDayClose } from "@/lib/business-days"
 import { loadBusinessName, isAuthenticated } from "@/lib/config-store"
 import { getConfigValue, setConfigValue } from "@/lib/supabase-config"
 import { resetDebitDeliveryLimit } from "@/lib/debit-limit"
@@ -29,7 +30,6 @@ export default function VentasPage() {
   const [sendingWa, setSendingWa] = useState(false)
   const [waStatus, setWaStatus] = useState<"idle" | "ok" | "error">("idle")
   const [dayStart, setDayStart] = useState<string>("")
-  const [openHour, setOpenHour] = useState<number>(0)
   const [dayClose, setDayClose] = useState<string>("")
   const [showStartConfirm, setShowStartConfirm] = useState(false)
   const [showCloseConfirm, setShowCloseConfirm] = useState(false)
@@ -48,15 +48,10 @@ export default function VentasPage() {
       getConfigValue("cartaCode"),
       getConfigValue("lastDayStart"),
       getConfigValue("lastDayClose"),
-      getConfigValue("horaApertura"),
-    ]).then(([code, lastStart, lastClose, horaApertura]) => {
+    ]).then(([code, lastStart, lastClose]) => {
       if (code) setCartaCode(code)
       if (lastStart) setDayStart(lastStart)
       if (lastClose && lastStart && lastClose > lastStart) setDayClose(lastClose)
-      if (horaApertura) {
-        const [hh] = horaApertura.split(":").map(Number)
-        setOpenHour(hh)
-      }
     })
     const timeout = setTimeout(() => setLoading(false), 3000)
     const unsub = subscribeToOrders((data) => {
@@ -71,11 +66,11 @@ export default function VentasPage() {
   useEffect(() => {
     if (isToday) return
     setLoadingDate(true)
-    getOrdersByDate(selectedDate, openHour).then((data) => {
+    getOrdersByBusinessDay(selectedDate).then((data) => {
       setDateOrders(data)
       setLoadingDate(false)
     })
-  }, [selectedDate, isToday, openHour])
+  }, [selectedDate, isToday])
 
   const displayOrders = useMemo(() => {
     if (isToday) {
@@ -116,14 +111,12 @@ export default function VentasPage() {
     const now = new Date().toISOString()
     const ok = await setConfigValue("lastDayStart", now)
     if (ok) {
+      await recordDayStart(now).catch(() => {})
       setDayStart(now)
       setDayClose("")
       resetDebitDeliveryLimit(now).catch(() => {})
       // Enviar mensajes post-venta a clientes de ayer
-      fetch("/api/whatsapp/post-venta", {
-        method: "POST",
-        headers: { "x-internal-token": process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "" },
-      }).catch(() => {})
+      fetch("/api/whatsapp/post-venta", { method: "POST" }).catch(() => {})
     }
     setStartingDay(false)
     setShowStartConfirm(false)
@@ -143,8 +136,9 @@ export default function VentasPage() {
     const now = new Date().toISOString()
     const ok = await setConfigValue("lastDayClose", now)
     if (ok) {
+      await recordDayClose(dayStart, now).catch(() => {})
       setDayClose(now)
-      fetch("/api/whatsapp/daily-summary", { method: "POST", headers: { "x-internal-token": process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "" } }).catch(() => {})
+      fetch("/api/whatsapp/daily-summary", { method: "POST" }).catch(() => {})
     }
     setClosingDay(false)
     setShowCloseConfirm(false)
@@ -303,7 +297,7 @@ export default function VentasPage() {
       const caption = `📊 Reporte de Ventas — ${dateLabel}\n💰 Total: $${stats.totalVentas.toLocaleString("es-CL")} (${completedOrders.length} pedidos entregados)`
       const res = await fetch("/api/whatsapp/send-report", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-internal-token": process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "" },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ fileBase64: base64, fileName, caption }),
       })
       if (res.ok) {

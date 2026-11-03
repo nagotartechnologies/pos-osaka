@@ -1,19 +1,17 @@
 import { NextRequest, NextResponse } from "next/server"
-import { createClient } from "@supabase/supabase-js"
+import { getAdminClient } from "@/lib/supabase-admin"
 import crypto from "crypto"
 import { sendMessage, sendTyping, isWhatsAppConfigured, downloadFile, type WhatsAppProvider } from "@/lib/whatsapp"
 import { normalizePhone, chatIdFromPhone } from "@/lib/phone"
 import { parseSchedule, checkStoreOpen, DAY_LABELS } from "@/lib/schedule"
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ""
-const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ""
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || ""
 const WEBHOOK_TOKEN = process.env.GREENAPI_WEBHOOK_TOKEN || ""
 const OPENWA_WEBHOOK_SECRET = process.env.OPENWA_WEBHOOK_SECRET || ""
 const STORAGE_BUCKET = "media"
 
 function getServerClient() {
-  return createClient(supabaseUrl, supabaseKey)
+  return getAdminClient()
 }
 
 // Sube un buffer al bucket de Supabase Storage y devuelve su URL publica.

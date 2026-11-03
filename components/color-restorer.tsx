@@ -14,8 +14,8 @@ export function ColorRestorer() {
       appliedRef.current = true
     } else {
       // Fallback: intentar desde Supabase
-      import("@/lib/supabase-config").then(({ getAllConfig }) =>
-        getAllConfig().then((cfg) => {
+      import("@/lib/supabase-config").then(({ getPublicConfig }) =>
+        getPublicConfig().then(({ config: cfg }) => {
           if (cfg.themeColor) {
             try {
               const tc = JSON.parse(cfg.themeColor)

@@ -19,8 +19,6 @@ interface WhatsAppActionsConfig {
  */
 export function useWhatsAppActions(config: WhatsAppActionsConfig) {
   const { businessName, paperWidth, logoUrl, storeAddress, deliveryFee } = config
-  const token = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ""
-
   const sendWhatsAppNotification = useCallback(async (
     order: SupabaseOrder,
     message: string,
@@ -30,7 +28,7 @@ export function useWhatsAppActions(config: WhatsAppActionsConfig) {
     try {
       const res = await fetch("/api/whatsapp/send", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-internal-token": token },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ phone: order.client_phone, message }),
       })
       if (!res.ok) console.error("WhatsApp send failed:", res.status)
@@ -45,7 +43,7 @@ export function useWhatsAppActions(config: WhatsAppActionsConfig) {
     } catch (err) {
       console.error("Error enviando WhatsApp:", err)
     }
-  }, [token])
+  }, [])
 
   const sendReceiptByWhatsApp = useCallback(async (order: SupabaseOrder) => {
     if (!order.client_phone) return
@@ -76,7 +74,7 @@ export function useWhatsAppActions(config: WhatsAppActionsConfig) {
 
       await fetch("/api/whatsapp/send", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-internal-token": token },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           phone: order.client_phone,
           type: "url",
@@ -101,17 +99,17 @@ export function useWhatsAppActions(config: WhatsAppActionsConfig) {
       message: `📄 Recibo enviado — $${order.total.toLocaleString("es-CL")}`,
       type: "file",
     })
-  }, [businessName, paperWidth, logoUrl, storeAddress, deliveryFee, token, sendWhatsAppNotification])
+  }, [businessName, paperWidth, logoUrl, storeAddress, deliveryFee, sendWhatsAppNotification])
 
   const notifyAdmin = useCallback(async (message: string) => {
     try {
       await fetch("/api/whatsapp/notify-admin", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-internal-token": token },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message }),
       })
     } catch {}
-  }, [token])
+  }, [])
 
   return { sendWhatsAppNotification, sendReceiptByWhatsApp, notifyAdmin }
 }

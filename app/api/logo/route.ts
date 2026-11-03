@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { createClient } from "@supabase/supabase-js"
+import { getAdminClient } from "@/lib/supabase-admin"
 
 /**
  * Sirve el logo del negocio como imagen binaria directa (sin redirect).
@@ -16,11 +16,9 @@ export async function GET(request: Request) {
   const size = searchParams.get("s") // "192" o "512"
 
   try {
-    const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-    const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-    if (!url || !key) return fallbackIcon()
+    if (!process.env.NEXT_PUBLIC_SUPABASE_URL) return fallbackIcon()
 
-    const supabase = createClient(url, key)
+    const supabase = getAdminClient()
 
     // 1. Intentar data URL base64 del logo (logo o logoLight)
     const { data: rows } = await supabase

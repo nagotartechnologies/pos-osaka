@@ -23,7 +23,10 @@ yarn-debug.log*
 yarn-error.log*
 
 # env files
+.env
 .env*.local
+deploy/app.env
+deploy/backend/.env
 
 # vercel
 .vercel
@@ -34,3 +37,5 @@ next-env.d.ts
 
 # backups locales de la base de datos
 backups/
+backup-*.sql
+deploy/backend/osaka-data.sql

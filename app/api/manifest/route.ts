@@ -1,18 +1,13 @@
 import { NextResponse } from "next/server"
-import { createClient } from "@supabase/supabase-js"
+import { getAdminClient } from "@/lib/supabase-admin"
 
 export async function GET() {
   let businessName = "Osaka POS"
 
   // Cargar nombre del negocio desde Supabase
   try {
-    const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-    const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-    if (url && key) {
-      const supabase = createClient(url, key)
-      const { data } = await supabase.from("config").select("value").eq("key", "nombreNegocio").single()
-      if (data?.value) businessName = data.value
-    }
+    const { data } = await getAdminClient().from("config").select("value").eq("key", "nombreNegocio").single()
+    if (data?.value) businessName = data.value
   } catch {}
 
   const manifest = {

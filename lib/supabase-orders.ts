@@ -6,6 +6,7 @@
 import { getSharedClient } from "@/lib/supabase"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { normalizePhone } from "@/lib/phone"
+import { getBusinessDaysForDate } from "@/lib/business-days"
 
 // ── Tipos ──────────────────────────────────────────────────────────
 export type OrderStatus = "recibido" | "cotizado" | "preparando" | "en-camino" | "entregado" | "cancelado"
@@ -313,7 +314,12 @@ export async function getTodaySales(sinceIso?: string, untilIso?: string): Promi
   return { total: sum, count: orders.length }
 }
 
-export async function getOrdersByDate(dateInput: Date | string, openHour: number = 0): Promise<SupabaseOrder[]> {
+// Respaldo para días sin jornada registrada: corte a esta hora (Santiago). No se
+// usa horaApertura porque el local recibe pedidos antes de abrir y atiende
+// pasada la medianoche.
+export const BUSINESS_DAY_CUTOFF_HOUR = 6
+
+export async function getOrdersByDate(dateInput: Date | string, openHour: number = BUSINESS_DAY_CUTOFF_HOUR): Promise<SupabaseOrder[]> {
   const sb = getClient()
   if (!sb) return []
   
@@ -356,6 +362,34 @@ export async function getOrdersByDate(dateInput: Date | string, openHour: number
     ...o,
     items: typeof o.items === "string" ? JSON.parse(o.items) : (o.items || []),
   }))
+}
+
+/**
+ * Pedidos del día laboral de una fecha: los creados entre Iniciar Día y Cerrar
+ * Día de las jornadas iniciadas esa fecha (hora Santiago). Si la fecha no tiene
+ * jornadas registradas (días previos al historial), cae a getOrdersByDate.
+ */
+export async function getOrdersByBusinessDay(dateStr: string): Promise<SupabaseOrder[]> {
+  const sb = getClient()
+  if (!sb) return []
+  const sessions = await getBusinessDaysForDate(dateStr)
+  if (sessions.length === 0) return getOrdersByDate(dateStr)
+  const results = await Promise.all(sessions.map(async (s) => {
+    let query = sb
+      .from("orders")
+      .select("*")
+      .gte("created_at", s.start)
+      .neq("status", "cancelado")
+    if (s.close) query = query.lte("created_at", s.close)
+    const { data, error } = await query
+    if (error) { console.error("getOrdersByBusinessDay error:", error); return [] }
+    return data || []
+  }))
+  const byId = new Map<string, any>()
+  results.flat().forEach((o: any) => byId.set(o.id, o))
+  return Array.from(byId.values())
+    .sort((a, b) => a.created_at.localeCompare(b.created_at))
+    .map(_normalizeOrder)
 }
 
 export async function getTodayOrders(): Promise<SupabaseOrder[]> {

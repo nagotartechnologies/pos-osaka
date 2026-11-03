@@ -4,8 +4,8 @@ import { useState, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
 import Image from "next/image"
 import { Sun, Moon, ArrowRight, AlertCircle, Delete, ShoppingBag, BarChart3, Zap } from "lucide-react"
-import { loadLogo, loadLogoForTheme, loadBusinessName, checkPinAsync, setSession, isAuthenticated } from "@/lib/config-store"
-import { getAllConfig } from "@/lib/supabase-config"
+import { loadLogo, loadLogoForTheme, loadBusinessName, loginWithPin, isAuthenticated } from "@/lib/config-store"
+import { getPublicConfig } from "@/lib/supabase-config"
 import { useTheme } from "next-themes"
 
 export default function LoginPage() {
@@ -38,7 +38,7 @@ export default function LoginPage() {
     setLogo(loadLogo("dark"))
     setBusinessName(loadBusinessName() || "Osaka POS")
     // Luego actualizar desde Supabase
-    getAllConfig().then((cfg) => {
+    getPublicConfig().then(({ config: cfg }) => {
       if (cfg.nombreNegocio) setBusinessName(cfg.nombreNegocio)
       if (cfg.logoPublicUrl) setLogo(cfg.logoPublicUrl)
     })
@@ -47,14 +47,14 @@ export default function LoginPage() {
   const tryLogin = async (code: string) => {
     setLoading(true)
     setError("")
-    const role = await checkPinAsync(code)
+    const { role, error: loginError } = await loginWithPin(code)
     if (role) {
       setSuccess(true)
       // Fade-out antes de navegar
       setTimeout(() => setVisible(false), 400)
-      setTimeout(() => { setSession(role); router.replace("/") }, 750)
+      setTimeout(() => { router.replace("/") }, 750)
     } else {
-      setError("PIN incorrecto")
+      setError(loginError || "PIN incorrecto")
       setShake(true)
       setTimeout(() => { setShake(false); setPin("") }, 500)
     }

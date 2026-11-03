@@ -3,14 +3,11 @@
  * (GreenAPI u OpenWA) según la configuración guardada en Supabase.
  * No hay fallback automático: se usa siempre el proveedor elegido.
  */
-import { createClient } from "@supabase/supabase-js"
+import { getSharedClient } from "@/lib/supabase"
 import * as greenapi from "@/lib/greenapi"
 import * as openwa from "@/lib/openwa"
 
 export type WhatsAppProvider = "greenapi" | "openwa"
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ""
-const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ""
 
 // Cache en memoria del proveedor activo (15 s) para no consultar la DB en cada envío
 const PROVIDER_CACHE_MS = 15_000
@@ -23,7 +20,7 @@ export async function getActiveProvider(): Promise<WhatsAppProvider> {
   }
 
   try {
-    const sb = createClient(supabaseUrl, supabaseKey)
+    const sb = getSharedClient()
     const { data } = await sb
       .from("config")
       .select("value")

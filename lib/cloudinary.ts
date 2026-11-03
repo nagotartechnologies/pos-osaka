@@ -33,7 +33,8 @@ async function uploadBlob(path: string, blob: Blob, contentType: string): Promis
   const sb = getSharedClient()
   const { error } = await sb.storage.from(STORAGE_BUCKET).upload(path, blob, {
     cacheControl: "3600",
-    upsert: true,
+    // La carta pública (anon) solo tiene permiso INSERT en comprobantes/: upsert exigiría UPDATE.
+    upsert: !path.includes("/comprobantes/"),
     contentType,
   })
   if (error) throw new Error(error.message || "Error al subir archivo")

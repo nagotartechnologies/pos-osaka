@@ -1,7 +1,11 @@
-import { NextResponse } from "next/server"
+import { NextRequest, NextResponse } from "next/server"
 import { getStateInstance, getActiveProvider, isWhatsAppConfigured } from "@/lib/whatsapp"
+import { verifyInternalRequest } from "@/lib/api-auth"
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const authError = await verifyInternalRequest(req)
+  if (authError) return authError
+
   const provider = await getActiveProvider()
 
   if (!(await isWhatsAppConfigured(provider))) {

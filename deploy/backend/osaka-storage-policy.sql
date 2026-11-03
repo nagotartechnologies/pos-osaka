@@ -1,7 +1,5 @@
--- Permite a anon/authenticated operar sobre objetos del bucket 'media'.
--- (modelo de la app: sin auth real, anon hace todo; el bucket ya es publico para lectura)
+-- Bucket 'media' (público para lectura por URL).
+-- Las policies vigentes viven en docs/migrations/2026-11-02-security-rls.sql:
+--   * staff (JWT con app_role) gestiona todo el bucket
+--   * anon solo puede subir a pos-osaka/comprobantes/
 DROP POLICY IF EXISTS "media anon all" ON storage.objects;
-CREATE POLICY "media anon all" ON storage.objects
-  FOR ALL TO anon, authenticated
-  USING (bucket_id = 'media')
-  WITH CHECK (bucket_id = 'media');
