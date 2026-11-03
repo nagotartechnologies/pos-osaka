@@ -3,7 +3,7 @@
  * Lee credenciales desde variables de entorno NEXT_PUBLIC_SUPABASE_*.
  */
 
-import { getSharedClient } from "@/lib/supabase"
+import { getSharedClient, subscribeWithAuth } from "@/lib/supabase"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { normalizePhone } from "@/lib/phone"
 import { getBusinessDaysForDate } from "@/lib/business-days"
@@ -668,40 +668,39 @@ function _subscribeChannel(sb: SupabaseClient) {
   if (_channel) { sb.removeChannel(_channel); _channel = null }
   const channel = sb.channel("orders-global")
   _channel = channel
-  channel
-    .on(
-      "postgres_changes",
-      { event: "*", schema: "public", table: "orders" },
-      (payload: any) => {
-        // Aplicar el cambio incrementalmente — sin refetch completo
-        _applyChange(payload.eventType, payload.new, payload.old)
-        // Notificar a listeners de eventos crudos (ej. notificaciones push)
-        _eventListeners.forEach((fn) => fn(payload.eventType, payload.new, payload.old))
+  channel.on(
+    "postgres_changes",
+    { event: "*", schema: "public", table: "orders" },
+    (payload: any) => {
+      // Aplicar el cambio incrementalmente — sin refetch completo
+      _applyChange(payload.eventType, payload.new, payload.old)
+      // Notificar a listeners de eventos crudos (ej. notificaciones push)
+      _eventListeners.forEach((fn) => fn(payload.eventType, payload.new, payload.old))
+    }
+  )
+  subscribeWithAuth(channel, (status) => {
+    if (_channel !== channel) return
+    if (status === "SUBSCRIBED") {
+      _channelActive = true
+      _channelStarting = false
+      // Si el canal estuvo caído, pudimos perder INSERT/UPDATE: resincronizar
+      if (_missedEvents) {
+        _missedEvents = false
+        refreshOrders().catch(() => {})
       }
-    )
-    .subscribe((status) => {
-      if (_channel !== channel) return
-      if (status === "SUBSCRIBED") {
-        _channelActive = true
-        _channelStarting = false
-        // Si el canal estuvo caído, pudimos perder INSERT/UPDATE: resincronizar
-        if (_missedEvents) {
-          _missedEvents = false
-          refreshOrders().catch(() => {})
-        }
-      } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
-        _channelActive = false
-        _channelStarting = false
-        _missedEvents = true
-        // Reintentar la conexión en vez de esperar a una nueva suscripción
-        if (!_reconnectTimer) {
-          _reconnectTimer = setTimeout(() => {
-            _reconnectTimer = null
-            if (!_channelActive) _subscribeChannel(sb)
-          }, 5000)
-        }
+    } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+      _channelActive = false
+      _channelStarting = false
+      _missedEvents = true
+      // Reintentar la conexión en vez de esperar a una nueva suscripción
+      if (!_reconnectTimer) {
+        _reconnectTimer = setTimeout(() => {
+          _reconnectTimer = null
+          if (!_channelActive) _subscribeChannel(sb)
+        }, 5000)
       }
-    })
+    }
+  })
 }
 
 // Al volver a la pestaña tras un rato oculta (tablet suspendida, app en

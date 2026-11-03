@@ -1,4 +1,4 @@
-import { getSharedClient } from "@/lib/supabase"
+import { getSharedClient, subscribeWithAuth } from "@/lib/supabase"
 
 const supabase = getSharedClient()
 
@@ -171,16 +171,17 @@ function _ensureInventoryChannel() {
     _invListeners.forEach((fn) => fn([]))
   })
 
-  supabase.channel("inventory-global")
-    .on(
-      "postgres_changes",
-      { event: "*", schema: "public", table: "inventory" },
-      (payload: any) => {
-        // Aplicar el cambio incrementalmente — sin refetch completo (ahorra egress)
-        _applyInventoryChange(payload.eventType, payload.new, payload.old)
-      }
-    )
-    .subscribe()
+  subscribeWithAuth(
+    supabase.channel("inventory-global")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "inventory" },
+        (payload: any) => {
+          // Aplicar el cambio incrementalmente — sin refetch completo (ahorra egress)
+          _applyInventoryChange(payload.eventType, payload.new, payload.old)
+        }
+      )
+  )
 }
 
 export function subscribeToInventory(onUpdate: InventoryListener): () => void {

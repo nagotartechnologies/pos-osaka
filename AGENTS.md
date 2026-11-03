@@ -5,7 +5,7 @@ POS para restaurante de sushi (Osaka, Chile): Next.js 16 (app router, `output: "
 ## Comandos
 - Gestor de paquetes: **npm** (el `Dockerfile` usa `npm ci` con `package-lock.json`; `pnpm-lock.yaml` es residual).
 - `npm run dev` · `npm run build` · `npm run lint`. No hay tests automatizados.
-- Deploy: `bash deploy.sh` → rsync a `root@docs.csec.cl:/root/osaka/app` y `docker compose -f docker-compose.prod.yml up -d --build` (contenedor `osaka-app`, expuesto en `127.0.0.1:3005`). Ojo: la ruta de origen del rsync está fija en `deploy.sh`.
+- Deploy: `bash deploy.sh` → rsync a `root@docs.csec.cl:/root/osaka/app` y `docker compose -f docker-compose.prod.yml up -d --build` (contenedor `osaka-app`, expuesto en `127.0.0.1:3005`). Sincroniza la carpeta donde está `deploy.sh`.
 - `deploy/gen-app-env.sh` genera `deploy/app.env` (producción) a partir de `.env`, repuntando Supabase a `https://osakasushi.nagotartech.com` y tomando las keys de `deploy/backend/.env`.
 - Las variables `NEXT_PUBLIC_*` se incrustan en el build (build args del Dockerfile): si cambian, hay que reconstruir.
 

@@ -1,4 +1,4 @@
-import { createClient, SupabaseClient } from "@supabase/supabase-js"
+import { createClient, SupabaseClient, type RealtimeChannel } from "@supabase/supabase-js"
 
 export const STORAGE_BUCKET = "media"
 
@@ -19,7 +19,9 @@ export function setSessionToken(token: string | null, exp: number | null): void 
   _token = token
   _tokenExp = exp || 0
   _noSessionUntil = 0
-  if (_shared) _shared.realtime.setAuth(token || ANON_KEY)
+  // Sin argumento: Realtime usa el callback accessToken, así el heartbeat
+  // renueva el JWT antes de que expire y lo reenvía a los canales abiertos.
+  if (_shared) _shared.realtime.setAuth()
 }
 
 export function clearSessionToken(): void {
@@ -66,6 +68,25 @@ export function getSharedClient(): SupabaseClient {
   }
   _shared = createClient(SUPABASE_URL, ANON_KEY, { accessToken: getAccessToken })
   return _shared
+}
+
+/**
+ * Suscribe un canal Realtime recién cuando el JWT de sesión está cargado.
+ * Si se suscribe antes, el join queda en buffer sin token, el servidor lo
+ * registra como anon y la RLS no le entrega eventos (orders, chat, etc.).
+ */
+export function subscribeWithAuth(
+  channel: RealtimeChannel,
+  callback?: Parameters<RealtimeChannel["subscribe"]>[0],
+): RealtimeChannel {
+  const sb = getSharedClient()
+  sb.realtime
+    .setAuth()
+    .catch(() => {})
+    .finally(() => {
+      if (sb.getChannels().includes(channel)) channel.subscribe(callback)
+    })
+  return channel
 }
 
 /**

@@ -14,7 +14,7 @@ rsync -avz \
   --exclude .git \
   --exclude images-backup \
   --exclude .DS_Store \
-  /Users/thomaslanderos/Desktop/pos-osaka/ \
+  "$(cd "$(dirname "$0")" && pwd)/" \
   "$VPS_HOST:$VPS_PATH/"
 
 echo "→ Reconstruyendo contenedor en el VPS..."

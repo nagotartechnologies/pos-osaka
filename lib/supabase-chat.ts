@@ -3,7 +3,7 @@
  * Incluye suscripción en tiempo real.
  */
 
-import { getSharedClient } from "@/lib/supabase"
+import { getSharedClient, subscribeWithAuth } from "@/lib/supabase"
 import { normalizePhone, chatIdFromPhone } from "@/lib/phone"
 import type { SupabaseClient, RealtimeChannel } from "@supabase/supabase-js"
 
@@ -334,17 +334,18 @@ function _ensureChatChannel() {
   if (!CHAT_REALTIME_ENABLED) return
   if (_chatChannel) return
   const sb = getClient()
-  _chatChannel = sb
-    .channel("chat_messages_realtime")
-    .on(
-      "postgres_changes",
-      { event: "INSERT", schema: "public", table: "chat_messages" },
-      (payload) => {
-        const msg = payload.new as ChatMessage
-        _chatListeners.forEach((fn) => fn(msg))
-      }
-    )
-    .subscribe()
+  _chatChannel = subscribeWithAuth(
+    sb
+      .channel("chat_messages_realtime")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "chat_messages" },
+        (payload) => {
+          const msg = payload.new as ChatMessage
+          _chatListeners.forEach((fn) => fn(msg))
+        }
+      )
+  )
 }
 
 /**
@@ -386,7 +387,7 @@ export function subscribeToChatByOrder(
       }
     )
   // Solo abrir el WebSocket si el Realtime de chat está habilitado.
-  if (CHAT_REALTIME_ENABLED) channel.subscribe()
+  if (CHAT_REALTIME_ENABLED) subscribeWithAuth(channel)
   return channel
 }
 
@@ -410,6 +411,6 @@ export function subscribeToChatByPhone(
       }
     )
   // Solo abrir el WebSocket si el Realtime de chat está habilitado.
-  if (CHAT_REALTIME_ENABLED) channel.subscribe()
+  if (CHAT_REALTIME_ENABLED) subscribeWithAuth(channel)
   return channel
 }
