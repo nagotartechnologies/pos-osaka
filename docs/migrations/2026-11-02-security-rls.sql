@@ -13,7 +13,7 @@ BEGIN;
 -- tuviera el signup habilitado).
 CREATE OR REPLACE FUNCTION public.is_staff() RETURNS boolean
 LANGUAGE sql STABLE AS $$
-  SELECT coalesce(nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'app_role', '') IN ('admin', 'vendedor')
+  SELECT coalesce(auth.jwt() ->> 'app_role', '') IN ('admin', 'vendedor')
 $$;
 
 -- 1. Borrar TODAS las policies existentes del schema public (las "USING (true)")

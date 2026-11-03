@@ -8,6 +8,8 @@ import { parseSchedule, checkStoreOpen, DAY_LABELS } from "@/lib/schedule"
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || ""
 const WEBHOOK_TOKEN = process.env.GREENAPI_WEBHOOK_TOKEN || ""
 const OPENWA_WEBHOOK_SECRET = process.env.OPENWA_WEBHOOK_SECRET || ""
+const GREENAPI_ID_INSTANCE = process.env.GREENAPI_ID_INSTANCE || ""
+const GREEN_API_BASE_URL = process.env.GREEN_API_BASE_URL || ""
 const STORAGE_BUCKET = "media"
 
 function getServerClient() {
@@ -47,11 +49,29 @@ type ParsedIncoming = {
 
 // ── Verificar firma HMAC del webhook de OpenWA (X-OpenWA-Signature: sha256=<hex>) ──
 function verifyOpenWaSignature(rawBody: string, signature: string | null): boolean {
-  if (!OPENWA_WEBHOOK_SECRET) return true
+  if (!OPENWA_WEBHOOK_SECRET) return false
   if (!signature || !signature.startsWith("sha256=")) return false
   const expected = "sha256=" + crypto.createHmac("sha256", OPENWA_WEBHOOK_SECRET).update(rawBody).digest("hex")
   if (expected.length !== signature.length) return false
   return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signature))
+}
+
+// ── Anti-SSRF: solo descargar media desde dominios del proveedor ──
+function isAllowedMediaUrl(raw: string): boolean {
+  try {
+    const u = new URL(raw)
+    if (u.protocol !== "https:") return false
+    const host = u.hostname.toLowerCase()
+    if (host === "greenapi.com" || host.endsWith(".greenapi.com")) return true
+    if (host === "green-api.com" || host.endsWith(".green-api.com")) return true
+    if (GREEN_API_BASE_URL) {
+      const base = new URL(GREEN_API_BASE_URL)
+      if (host === base.hostname.toLowerCase()) return true
+    }
+    return false
+  } catch {
+    return false
+  }
 }
 
 // ── Parsear mensaje entrante de GreenAPI ──
@@ -78,7 +98,7 @@ async function parseGreenApi(body: any): Promise<ParsedIncoming | null> {
     msgType = "image"
     // Descargar imagen de GreenAPI y subir a Cloudinary
     const downloadUrl = messageData.fileMessageData?.downloadUrl
-    if (downloadUrl) {
+    if (downloadUrl && isAllowedMediaUrl(downloadUrl)) {
       const buffer = await downloadFile(downloadUrl)
       if (buffer) {
         const storedUrl = await uploadMediaToStorage(buffer, `pos-osaka/chat-media/chat-${Date.now()}.jpg`, "image/jpeg")
@@ -89,7 +109,7 @@ async function parseGreenApi(body: any): Promise<ParsedIncoming | null> {
     messageText = "🎤 Audio"
     msgType = "audio"
     const downloadUrl = messageData.fileMessageData?.downloadUrl
-    if (downloadUrl) {
+    if (downloadUrl && isAllowedMediaUrl(downloadUrl)) {
       const buffer = await downloadFile(downloadUrl)
       if (buffer) {
         const storedUrl = await uploadMediaToStorage(buffer, `pos-osaka/chat-media/audio-${Date.now()}.ogg`, "audio/ogg")
@@ -184,13 +204,13 @@ export async function POST(req: NextRequest) {
 
       parsed = await parseOpenWa(body)
     } else {
-      // Verificar token de webhook si está configurado
-      if (WEBHOOK_TOKEN && body.stateInstance !== undefined) {
-        // GreenAPI envía el instanceId — verificar que coincida con nuestro token secreto
-        const token = req.headers.get("x-webhook-token") || body.webhookToken || ""
-        if (WEBHOOK_TOKEN && token && token !== WEBHOOK_TOKEN) {
-          return NextResponse.json({ error: "Token inválido" }, { status: 403 })
-        }
+      // Verificar que el webhook realmente venga de GreenAPI:
+      // token compartido (header/body) o el idInstance propio del payload.
+      const token = req.headers.get("x-webhook-token") || body.webhookToken || ""
+      const tokenOk = !!WEBHOOK_TOKEN && token === WEBHOOK_TOKEN
+      const idOk = !!GREENAPI_ID_INSTANCE && String(body.instanceData?.idInstance ?? "") === GREENAPI_ID_INSTANCE
+      if (!tokenOk && !idOk) {
+        return NextResponse.json({ error: "No autorizado" }, { status: 403 })
       }
 
       // GreenAPI envía diferentes tipos de webhook

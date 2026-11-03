@@ -1,12 +1,15 @@
 -- Privilegios para los roles de Supabase sobre el schema public
--- anon (key pública) solo lee el menú; el resto lo restringen las RLS de
--- docs/migrations/2026-11-02-security-rls.sql (ejecutarla después de este archivo).
+-- (las RLS policies ya permiten el acceso; esto otorga los privilegios de tabla)
 GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
 
+-- anon: acceso minimo (la carta publica solo lee menu y llama is_staff)
+GRANT SELECT ON public.categories, public.products TO anon;
+GRANT EXECUTE ON FUNCTION public.is_staff() TO anon;
+
+-- authenticated (staff) y service_role: acceso completo, filtrado por RLS
 GRANT ALL ON ALL TABLES IN SCHEMA public TO authenticated, service_role;
 GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO authenticated, service_role;
 GRANT ALL ON ALL FUNCTIONS IN SCHEMA public TO authenticated, service_role;
-GRANT SELECT ON public.products, public.categories TO anon;
 
 ALTER DEFAULT PRIVILEGES IN SCHEMA public
   GRANT ALL ON TABLES TO authenticated, service_role;
