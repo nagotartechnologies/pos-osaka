@@ -45,6 +45,50 @@ type ParsedIncoming = {
   msgType: "text" | "image" | "audio"
   mediaUrl: string | null
   provider: WhatsAppProvider
+  messageId: string
+  sentAt: number | null // epoch ms en que el cliente envió el mensaje
+}
+
+// ── Protección contra respuestas repetidas ──────────────────────────
+// El proceso es uno solo (contenedor osaka-app), así que basta memoria.
+// 1) Webhooks duplicados del proveedor: se ignora un messageId ya procesado.
+// 2) Ráfagas: si llegan varios mensajes a la vez, cada webhook consultaba la DB
+//    en paralelo antes de que existiera el registro de la respuesta y todos
+//    respondían. El "claim" síncrono por teléfono deja pasar solo al primero.
+// 3) Mensajes atrasados: al reconectarse, OpenWA entrega de golpe mensajes de
+//    hace horas. Se guardan en el chat pero no disparan respuestas automáticas.
+const SEEN_TTL_MS = 60 * 60 * 1000
+const CLAIM_TTL_MS = 2 * 60 * 1000
+const STALE_MS = 10 * 60 * 1000
+const seenMessages = new Map<string, number>()
+const autoReplyClaims = new Map<string, number>()
+
+function prune(map: Map<string, number>, ttl: number) {
+  const now = Date.now()
+  for (const [k, t] of map) if (now - t > ttl) map.delete(k)
+}
+
+function alreadySeen(provider: string, messageId: string): boolean {
+  if (!messageId) return false
+  prune(seenMessages, SEEN_TTL_MS)
+  const key = `${provider}:${messageId}`
+  if (seenMessages.has(key)) return true
+  seenMessages.set(key, Date.now())
+  return false
+}
+
+/** Check-and-set síncrono: true solo para el primer webhook del teléfono en la ventana. */
+function claimAutoReply(phone: string): boolean {
+  prune(autoReplyClaims, CLAIM_TTL_MS)
+  if (autoReplyClaims.has(phone)) return false
+  autoReplyClaims.set(phone, Date.now())
+  return true
+}
+
+function toEpochMs(ts: unknown): number | null {
+  const n = typeof ts === "string" ? Number(ts) : typeof ts === "number" ? ts : NaN
+  if (!Number.isFinite(n) || n <= 0) return null
+  return n < 1e12 ? n * 1000 : n
 }
 
 // ── Verificar firma HMAC del webhook de OpenWA (X-OpenWA-Signature: sha256=<hex>) ──
@@ -122,7 +166,11 @@ async function parseGreenApi(body: any): Promise<ParsedIncoming | null> {
     messageText = `[${typeMessage}]`
   }
 
-  return { phone, messageText, msgType, mediaUrl, provider: "greenapi" }
+  return {
+    phone, messageText, msgType, mediaUrl, provider: "greenapi",
+    messageId: String(body.idMessage || ""),
+    sentAt: toEpochMs(body.timestamp),
+  }
 }
 
 // ── Parsear mensaje entrante de OpenWA ──
@@ -173,7 +221,12 @@ async function parseOpenWa(body: any): Promise<ParsedIncoming | null> {
     messageText = bodyText || `[${type}]`
   }
 
-  return { phone, messageText, msgType, mediaUrl, provider: "openwa" }
+  const rawId = data.id?._serialized ?? data.id ?? data.messageId ?? ""
+  return {
+    phone, messageText, msgType, mediaUrl, provider: "openwa",
+    messageId: String(rawId),
+    sentAt: toEpochMs(data.timestamp ?? body.timestamp),
+  }
 }
 
 export async function POST(req: NextRequest) {
@@ -228,7 +281,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true })
     }
 
-    const { phone, messageText, msgType, mediaUrl, provider } = parsed
+    const { phone, messageText, msgType, mediaUrl, provider, messageId, sentAt } = parsed
+
+    // Webhook repetido del proveedor: ya se guardó y respondió
+    if (alreadySeen(provider, messageId)) {
+      return NextResponse.json({ ok: true })
+    }
+    const isStale = sentAt !== null && Date.now() - sentAt > STALE_MS
 
     // Buscar el pedido más reciente asociado a este teléfono
     const sb = getServerClient()
@@ -292,7 +351,11 @@ export async function POST(req: NextRequest) {
       // Cerrado si el día no fue iniciado O el schedule dice cerrado
       const isOpen = dayIsOpen && scheduleOpen
 
-      // Las respuestas automáticas salen por el mismo canal por donde llegó el mensaje
+      // Las respuestas automáticas salen por el mismo canal por donde llegó el mensaje.
+      // Mensajes atrasados o ráfagas del mismo teléfono: solo se guardan, sin responder.
+      if (isStale || !claimAutoReply(phone)) {
+        return NextResponse.json({ ok: true })
+      }
       const waConfigured = await isWhatsAppConfigured(provider)
 
       if (!isOpen && waConfigured) {
