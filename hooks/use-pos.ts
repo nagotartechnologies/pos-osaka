@@ -1,7 +1,8 @@
 "use client"
 
 import { useState, useEffect, useMemo, useCallback } from "react"
-import { getAvailableProducts, getCategories, getEffectivePrice, setNewProductDays, type Product, type CustomizationOption } from "@/lib/supabase-menu"
+import { getAvailableProducts, getCategories, getEffectivePrice, setNewProductDays, isProductOnSchedule, type Product, type CustomizationOption } from "@/lib/supabase-menu"
+import { useNow } from "@/hooks/use-now"
 import { addOrder, getOrdersByDateRange, type AddOrderData, type PaymentMethod, type DeliveryType } from "@/lib/supabase-orders"
 import { getAllConfig } from "@/lib/supabase-config"
 import type { CartItem } from "@/app/pos/types"
@@ -12,6 +13,8 @@ export function usePOS() {
   const [products, setProducts] = useState<Product[]>([])
   const [categories, setCategories] = useState<{ id: string; name: string }[]>([])
   const [loading, setLoading] = useState(true)
+  // Promos con horario: se ocultan solas al salir de su franja
+  const now = useNow()
 
   // Filters
   const [search, setSearch] = useState("")
@@ -79,20 +82,20 @@ export function usePOS() {
 
   // Filtered products
   const filtered = useMemo(() => {
-    let result = products
+    let result = products.filter((p) => isProductOnSchedule(p, now))
     if (selectedCat !== "all") result = result.filter((p) => p.category === selectedCat)
     if (search) {
       const q = search.toLowerCase()
       result = result.filter((p) => p.name.toLowerCase().includes(q))
     }
     return result
-  }, [products, selectedCat, search])
+  }, [products, selectedCat, search, now])
 
   // Top sellers products
   const topSellers = useMemo(() => {
     if (topSellerIds.length === 0) return []
-    return topSellerIds.map((id) => products.find((p) => p.id === id)).filter(Boolean) as Product[]
-  }, [topSellerIds, products])
+    return topSellerIds.map((id) => products.find((p) => p.id === id)).filter((p): p is Product => !!p && isProductOnSchedule(p, now))
+  }, [topSellerIds, products, now])
 
   // Helpers
   const getCategoryName = useCallback(

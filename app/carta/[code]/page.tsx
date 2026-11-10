@@ -8,7 +8,7 @@ import { loadLogoForTheme, loadBusinessName, loadWhatsApp, loadBankData, loadAdd
 import { getPublicConfig } from "@/lib/supabase-config"
 import { SALSAS } from "@/lib/carta-salsas"
 import { uploadImage, isCloudinaryConfigured, optimizeCloudinaryUrl } from "@/lib/cloudinary"
-import { getAvailableProducts, getCategories as getDbCategories, isNewProduct, sortNewFirst, getEffectivePrice, getActiveDiscountPct, getDiscountCustomerLabel, setNewProductDays, type Product } from "@/lib/supabase-menu"
+import { getAvailableProducts, getCategories as getDbCategories, isNewProduct, sortNewFirst, getEffectivePrice, getActiveDiscountPct, getDiscountCustomerLabel, setNewProductDays, isProductOnSchedule, type Product } from "@/lib/supabase-menu"
 import { parseSchedule, checkStoreOpen, DAY_KEYS, DAY_LABELS, type WeekSchedule } from "@/lib/schedule"
 import { MapPin, Clock, Star, Sparkles, Minus, Plus, ShoppingBag, X, Trash2, ChevronLeft, ChevronRight, Truck, Store, Banknote, CreditCard, ArrowRightLeft, CheckCircle2, User, Phone, MessageSquare, Upload, Loader2, ImageIcon, Palette, Beef, Droplets } from "lucide-react"
 
@@ -190,9 +190,10 @@ export default function CartaPage() {
     return () => clearInterval(interval)
   }, [])
 
-  // Derivar menuItems desde rawProducts aplicando descuentos vigentes
+  // Derivar menuItems desde rawProducts aplicando descuentos vigentes.
+  // Las promos con horario solo aparecen dentro de su franja.
   useEffect(() => {
-    setMenuItems(rawProducts.map((p) => {
+    setMenuItems(rawProducts.filter((p) => isProductOnSchedule(p, now)).map((p) => {
       const base = {
         id: p.id,
         name: p.name,
@@ -229,8 +230,11 @@ export default function CartaPage() {
     setCart((prev) => {
       if (prev.length === 0) return prev
       const byId = new Map(menuItems.map((m) => [m.id, m]))
-      let changed = false
-      const next = prev.map((c) => {
+      // Promo que salió de su horario: se quita del carrito
+      const offSchedule = new Set(rawProducts.filter((p) => !byId.has(p.id)).map((p) => p.id))
+      const kept = prev.filter((c) => !offSchedule.has(c.id))
+      let changed = kept.length !== prev.length
+      const next = kept.map((c) => {
         const m = byId.get(c.id)
         if (!m) return c // salsas y items custom no están en menuItems
         if (m.price !== c.price || (m.originalPrice ?? null) !== (c.originalPrice ?? null) || (m.discountPct ?? null) !== (c.discountPct ?? null)) {
@@ -241,7 +245,7 @@ export default function CartaPage() {
       })
       return changed ? next : prev
     })
-  }, [menuItems])
+  }, [menuItems, rawProducts])
 
   const filteredItems = useMemo(() => {
     if (activeCategory === "all") return menuItems

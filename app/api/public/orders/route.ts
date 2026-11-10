@@ -5,7 +5,7 @@ import { isDebitDeliveryBlocked } from "@/lib/debit-limit"
 import { sendMessage, isWhatsAppConfigured } from "@/lib/whatsapp"
 import { normalizePhone } from "@/lib/phone"
 import { STORAGE_BUCKET } from "@/lib/supabase"
-import { getEffectivePrice, type Product } from "@/lib/supabase-menu"
+import { getEffectivePrice, isProductOnSchedule, type Product } from "@/lib/supabase-menu"
 import { SALSAS } from "@/lib/carta-salsas"
 
 /**
@@ -81,6 +81,7 @@ async function priceItems(raw: RawItem[]): Promise<PricingResult> {
     }
     const p = byId.get(it.id)
     if (!p || !p.available) return { error: "Uno de los productos ya no está disponible. Revisa tu carrito." }
+    if (!isProductOnSchedule(p, now)) return { error: `"${p.name}" ya no está disponible en este horario.` }
 
     const extras: { description: string; price: number }[] = it.unitExtras.map((d) => ({ description: d, price: 0 }))
     let extrasTotal = 0

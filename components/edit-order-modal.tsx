@@ -21,7 +21,8 @@ import {
   MapPin,
 } from "lucide-react"
 import Image from "next/image"
-import { getAvailableProducts, getCategories, getEffectivePrice, getActiveDiscountPct, type Product, type Category } from "@/lib/supabase-menu"
+import { getAvailableProducts, getCategories, getEffectivePrice, getActiveDiscountPct, isProductOnSchedule, type Product, type Category } from "@/lib/supabase-menu"
+import { useNow } from "@/hooks/use-now"
 import { getAllConfig } from "@/lib/supabase-config"
 import {
   updateOrderItems,
@@ -66,6 +67,8 @@ export function EditOrderModal({ open, order, onClose, onOrderUpdated }: EditOrd
   const [products, setProducts] = useState<Product[]>([])
   const [categories, setCategories] = useState<Category[]>([])
   const [loading, setLoading] = useState(true)
+  // Promos con horario: se ocultan solas al salir de su franja
+  const now = useNow()
 
   // Step: 1 = edit items, 2 = review changes
   const [step, setStep] = useState<1 | 2>(1)
@@ -160,14 +163,14 @@ export function EditOrderModal({ open, order, onClose, onOrderUpdated }: EditOrd
 
   // Filtered products
   const filtered = useMemo(() => {
-    let result = products
+    let result = products.filter((p) => isProductOnSchedule(p, now))
     if (selectedCat !== "all") result = result.filter((p) => p.category === selectedCat)
     if (search) {
       const q = search.toLowerCase()
       result = result.filter((p) => p.name.toLowerCase().includes(q))
     }
     return result
-  }, [products, selectedCat, search])
+  }, [products, selectedCat, search, now])
 
   // Cart helpers
   const addToCart = (product: Product) => {

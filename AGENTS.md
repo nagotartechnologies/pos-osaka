@@ -24,6 +24,7 @@ POS para restaurante de sushi (Osaka, Chile): Next.js 16 (app router, `output: "
 - `lib/pdf/` — tickets de cocina, boletas, cierre de caja y reportes (jsPDF).
 - `lib/business-days.ts` — jornadas laborales (Iniciar Día → Cerrar Día) guardadas en `config.businessDays`; los reportes de días pasados usan esas ventanas, no un horario fijo.
 - `lib/schedule.ts` — horario de atención (`config.schedule`).
+- Promos por franja: `products.visible_days/visible_time_start/visible_time_end` + `isProductOnSchedule()` (`lib/supabase-menu.ts`). Se filtran en la carta, el POS (`use-pos`, `pos-modal`, `edit-order-modal`, con `useNow()` que refresca cada minuto) y se validan en `/api/public/orders`. Nuevas vistas que listen productos para vender deben aplicar el mismo filtro.
 - `components/`, `components/ui/` (shadcn), `hooks/` (`use-pos`, `use-chat-conversation`, `use-whatsapp-actions`, etc.).
 - `docs/` — `schema.sql` (esquema de referencia), `migrations/` (SQL a aplicar a mano, con fecha), `plans/` (diseños de features).
 

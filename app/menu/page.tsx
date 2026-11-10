@@ -24,6 +24,7 @@ import {
   MoreVertical,
   ChevronUp,
   ChevronDown,
+  Clock,
 } from "lucide-react"
 import { menuItems as fallbackMenuItems, categories as defaultCategoriesFallback, type MenuItem } from "@/lib/store"
 import { saveCategories, loadCategories, type CustomCategory } from "@/lib/config-store"
@@ -33,13 +34,17 @@ import {
   getCategories as getDbCategories, addCategory, updateCategory, deleteCategory as deleteCategoryDb,
   updateCategorySortOrders, deleteAllProducts, batchUpdateCustomization, batchUpdateCustomBuild,
   batchUpdateDiscount, getDiscountStatus, getActiveDiscountPct, getEffectivePrice,
-  formatDiscountSchedule, seedIfEmpty, type Product, type Category as DbCategory, type CustomizationOption,
+  formatDiscountSchedule, formatVisibilitySchedule, isProductOnSchedule, seedIfEmpty, type Product, type Category as DbCategory, type CustomizationOption,
 } from "@/lib/supabase-menu"
 import {
   DiscountFields, emptyDiscountForm, productToDiscountForm,
   validateDiscountForm, formToDiscountConfig, formToDiscountColumns,
   type DiscountForm,
 } from "@/components/discount-fields"
+import {
+  VisibilityFields, emptyVisibilityForm, productToVisibilityForm,
+  validateVisibilityForm, formToVisibilityColumns, type VisibilityForm,
+} from "@/components/visibility-fields"
 
 interface MenuItemEditable extends MenuItem {
   description?: string
@@ -54,6 +59,9 @@ interface MenuItemEditable extends MenuItem {
   discount_days?: number[] | null
   discount_time_start?: string | null
   discount_time_end?: string | null
+  visible_days?: number[] | null
+  visible_time_start?: string | null
+  visible_time_end?: string | null
 }
 
 interface CsvRow {
@@ -113,6 +121,10 @@ export default function MenuPage() {
   // Descuento por tiempo limitado (modal de producto)
   const [discountForm, setDiscountForm] = useState<DiscountForm>(emptyDiscountForm)
   const discountError = useMemo(() => validateDiscountForm(discountForm), [discountForm])
+
+  // Horario de disponibilidad (promos que solo existen en una franja)
+  const [visibilityForm, setVisibilityForm] = useState<VisibilityForm>(emptyVisibilityForm)
+  const visibilityError = useMemo(() => validateVisibilityForm(visibilityForm), [visibilityForm])
 
   // Opciones de personalización
   const [proteinOptions, setProteinOptions] = useState<CustomizationOption[]>([])
@@ -214,6 +226,9 @@ export default function MenuPage() {
         discount_days: Array.isArray(p.discount_days) ? p.discount_days.map((d) => Number(d)) : null,
         discount_time_start: p.discount_time_start || null,
         discount_time_end: p.discount_time_end || null,
+        visible_days: Array.isArray(p.visible_days) ? p.visible_days.map((d) => Number(d)) : null,
+        visible_time_start: p.visible_time_start || null,
+        visible_time_end: p.visible_time_end || null,
       })))
 
       // Cargar categorías
@@ -311,6 +326,7 @@ export default function MenuPage() {
     setProteinOptions([])
     setWrapperOptions([])
     setDiscountForm(emptyDiscountForm)
+    setVisibilityForm(emptyVisibilityForm)
     setShowModal(true)
   }
 
@@ -330,12 +346,13 @@ export default function MenuPage() {
     setProteinOptions(item.protein_options || [])
     setWrapperOptions(item.wrapper_options || [])
     setDiscountForm(productToDiscountForm(item))
+    setVisibilityForm(productToVisibilityForm(item))
     setShowModal(true)
   }
 
   const handleSave = async () => {
     if (!formData.name || !formData.price) return
-    if (discountError) return
+    if (discountError || visibilityError) return
 
     setUploading(true)
     setUploadError(null)
@@ -359,6 +376,7 @@ export default function MenuPage() {
 
     // Descuento: formToDiscountColumns devuelve las 6 columnas (null si vacío)
     const discountFields = formToDiscountColumns(discountForm)
+    const visibilityFields = formToVisibilityColumns(visibilityForm)
 
     if (editingItem) {
       const updates: any = {
@@ -374,6 +392,7 @@ export default function MenuPage() {
         protein_options: cleanProteins.length > 0 ? cleanProteins : null,
         wrapper_options: cleanWrappers.length > 0 ? cleanWrappers : null,
         ...discountFields,
+        ...visibilityFields,
       }
       const result = await updateProduct(editingItem.id, updates)
       if (result) {
@@ -397,6 +416,7 @@ export default function MenuPage() {
         protein_options: cleanProteins.length > 0 ? cleanProteins : null,
         wrapper_options: cleanWrappers.length > 0 ? cleanWrappers : null,
         ...discountFields,
+        ...visibilityFields,
       }
       const result = await addProduct(newProd)
       if (result) {
@@ -416,6 +436,9 @@ export default function MenuPage() {
           discount_days: Array.isArray(result.discount_days) ? result.discount_days.map((d) => Number(d)) : null,
           discount_time_start: result.discount_time_start || null,
           discount_time_end: result.discount_time_end || null,
+          visible_days: Array.isArray(result.visible_days) ? result.visible_days.map((d) => Number(d)) : null,
+          visible_time_start: result.visible_time_start || null,
+          visible_time_end: result.visible_time_end || null,
         }])
       }
     }
@@ -818,6 +841,15 @@ export default function MenuPage() {
                   {getCategoryName(item.category)}
                 </span>
               </div>
+              {formatVisibilitySchedule(item) && (
+                <div
+                  title={`Visible: ${formatVisibilitySchedule(item)}`}
+                  className={`absolute top-2 left-2 flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold text-white shadow-sm max-w-[150px] truncate ${isProductOnSchedule(item) ? "bg-sky-500" : "bg-zinc-500"}`}
+                >
+                  <Clock className="h-3 w-3 flex-shrink-0" />
+                  {isProductOnSchedule(item) ? "Visible ahora" : "Fuera de horario"}
+                </div>
+              )}
               {(() => {
                 const status = getDiscountStatus(item)
                 if (!status) return null
@@ -1262,6 +1294,9 @@ export default function MenuPage() {
                 setForm={setDiscountForm}
                 basePrice={parseFloat(formData.price) || 0}
               />
+
+              {/* Horario de disponibilidad */}
+              <VisibilityFields form={visibilityForm} setForm={setVisibilityForm} />
             </div>
 
             {/* Upload error */}
@@ -1298,7 +1333,7 @@ export default function MenuPage() {
                 </button>
                 <button
                   onClick={handleSave}
-                  disabled={!formData.name || !formData.price || uploading || !!discountError}
+                  disabled={!formData.name || !formData.price || uploading || !!discountError || !!visibilityError}
                   className="flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {uploading && <Loader2 className="h-4 w-4 animate-spin" />}

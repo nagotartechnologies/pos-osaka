@@ -31,6 +31,9 @@ CREATE TABLE public.products (
   discount_days smallint[],
   discount_time_start text,
   discount_time_end text,
+  visible_days smallint[],
+  visible_time_start text,
+  visible_time_end text,
   CONSTRAINT products_pkey PRIMARY KEY (id)
 );
 

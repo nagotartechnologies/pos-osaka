@@ -30,6 +30,10 @@ export interface Product {
   discount_days?: number[] | null
   discount_time_start?: string | null
   discount_time_end?: string | null
+  // Horario de disponibilidad: fuera de él el producto no se muestra ni se vende
+  visible_days?: number[] | null
+  visible_time_start?: string | null
+  visible_time_end?: string | null
 }
 
 export interface Category {
@@ -314,6 +318,44 @@ export function getDiscountCustomerLabel(p: DiscountFields, now = Date.now()): s
   const e = new Date(p.discount_end)
   if (Number.isNaN(e.getTime())) return null
   return `Oferta hasta ${e.toLocaleDateString("es-CL", { day: "2-digit", month: "2-digit" })} ${e.toLocaleTimeString("es-CL", { hour: "2-digit", minute: "2-digit" })}`
+}
+
+// ─── Horario de disponibilidad del producto ───
+// Para promos que solo existen en una franja (ej. todos los días 13:00–14:00).
+// Sin días ni horario = siempre disponible. Sin días pero con horario = todos
+// los días. Si "hasta" < "desde", la franja termina al día siguiente.
+
+type VisibilityFields = Pick<Product, "visible_days" | "visible_time_start" | "visible_time_end">
+
+export function hasVisibilitySchedule(p: VisibilityFields): boolean {
+  return normalizeDays(p.visible_days).length > 0 ||
+    (parseTimeToMinutes(p.visible_time_start) !== null && parseTimeToMinutes(p.visible_time_end) !== null)
+}
+
+export function isProductOnSchedule(p: VisibilityFields, now = Date.now()): boolean {
+  if (!hasVisibilitySchedule(p)) return true
+  const listed = normalizeDays(p.visible_days)
+  const days = listed.length > 0 ? listed : [0, 1, 2, 3, 4, 5, 6]
+  const ts = parseTimeToMinutes(p.visible_time_start)
+  const te = parseTimeToMinutes(p.visible_time_end)
+  const { day, minutes } = getStoreClock(now)
+  if (ts === null || te === null || ts === te) return days.includes(day)
+  if (te > ts) return days.includes(day) && minutes >= ts && minutes < te
+  const prevDay = (day + 6) % 7
+  return (days.includes(day) && minutes >= ts) || (days.includes(prevDay) && minutes < te)
+}
+
+/** Resumen para el admin, ej. "Lun, Mar · 13:00–14:00". "" si no tiene horario. */
+export function formatVisibilitySchedule(p: VisibilityFields): string {
+  if (!hasVisibilitySchedule(p)) return ""
+  const days = normalizeDays(p.visible_days)
+  const diasTxt = days.length === 0 || days.length === 7
+    ? "Todos los días"
+    : DAY_ORDER.filter((d) => days.includes(d)).map((d) => DAY_LABELS[DAY_LABEL_INDEX[d]]).join(", ")
+  const ts = parseTimeToMinutes(p.visible_time_start)
+  const te = parseTimeToMinutes(p.visible_time_end)
+  const horarioTxt = ts !== null && te !== null && ts !== te ? ` · ${p.visible_time_start}–${p.visible_time_end}` : " · todo el día"
+  return `${diasTxt}${horarioTxt}`
 }
 
 // ─── Productos ───

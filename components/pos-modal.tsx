@@ -24,7 +24,8 @@ import {
   MessageSquare,
 } from "lucide-react"
 import Image from "next/image"
-import { getAvailableProducts, getCategories, getEffectivePrice, getActiveDiscountPct, type Product, type Category, type CustomizationOption } from "@/lib/supabase-menu"
+import { getAvailableProducts, getCategories, getEffectivePrice, getActiveDiscountPct, isProductOnSchedule, type Product, type Category, type CustomizationOption } from "@/lib/supabase-menu"
+import { useNow } from "@/hooks/use-now"
 import { addOrder, type AddOrderData, type PaymentMethod, type DeliveryType } from "@/lib/supabase-orders"
 import { getAllConfig } from "@/lib/supabase-config"
 import { optimizeCloudinaryUrl } from "@/lib/cloudinary"
@@ -66,6 +67,8 @@ export function POSModal({ open, onClose, onOrderCreated, initialClientName, ini
   const [products, setProducts] = useState<Product[]>([])
   const [categories, setCategories] = useState<Category[]>([])
   const [loading, setLoading] = useState(true)
+  // Promos con horario: se ocultan solas al salir de su franja
+  const now = useNow()
 
   // Step
   const [step, setStep] = useState<1 | 2>(1)
@@ -144,14 +147,14 @@ export function POSModal({ open, onClose, onOrderCreated, initialClientName, ini
 
   // Filtered products
   const filtered = useMemo(() => {
-    let result = products
+    let result = products.filter((p) => isProductOnSchedule(p, now))
     if (selectedCat !== "all") result = result.filter((p) => p.category === selectedCat)
     if (search) {
       const q = search.toLowerCase()
       result = result.filter((p) => p.name.toLowerCase().includes(q))
     }
     return result
-  }, [products, selectedCat, search])
+  }, [products, selectedCat, search, now])
 
   // Helper para obtener nombre de categoría
   const getCategoryName = (catId: string) => {
